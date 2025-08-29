@@ -128,7 +128,10 @@ class Example:
 
         # self.integrator = wp.sim.XPBDIntegrator()
         # self.integrator = wp.sim.SemiImplicitIntegrator()
-        self.integrator = wp.sim.FeatherstoneIntegrator(
+        # self.integrator = wp.sim.FeatherstoneIntegrator(
+        #     self.model, use_tile_gemm=self.use_tile_gemm, fuse_cholesky=self.fuse_cholesky
+        # )
+        self.integrator = wp.sim.MoreauIntegrator(
             self.model, use_tile_gemm=self.use_tile_gemm, fuse_cholesky=self.fuse_cholesky
         )
 
@@ -143,7 +146,10 @@ class Example:
         wp.sim.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, None, self.state_0)
 
         # simulate() allocates memory via a clone, so we can't use graph capture if the device does not support mempools
-        self.use_cuda_graph = wp.get_device().is_cuda and wp.is_mempool_enabled(wp.get_device())
+        self.use_cuda_graph = wp.get_device().is_cuda and wp.is_mempool_enabled(wp.get_device())    
+        # print("Graph Capture temporarily disabled for debugging")
+        # self.use_cuda_graph = False
+
         if self.use_cuda_graph:
             with wp.ScopedCapture() as capture:
                 self.simulate()
@@ -188,7 +194,7 @@ if __name__ == "__main__":
         help="Path to the output USD file.",
     )
     parser.add_argument("--num_frames", type=int, default=300, help="Total number of frames.")
-    parser.add_argument("--num_envs", type=int, default=8, help="Total number of simulated environments.")
+    parser.add_argument("--num_envs", type=int, default=1, help="Total number of simulated environments.")
 
     args = parser.parse_known_args()[0]
 

@@ -173,6 +173,7 @@ Integrators
 
 .. autoclass:: FeatherstoneIntegrator
     :members:
+    
 
 .. autoclass:: VBDIntegrator
     :members:
