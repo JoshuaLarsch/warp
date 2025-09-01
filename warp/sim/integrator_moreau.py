@@ -2274,6 +2274,9 @@ class MoreauIntegrator(Integrator):
         if model.joint_count:
 
             ################### MOREAU SPECIFIC ALLOCATIONS BEGIN ###################
+            #self.sigmoid_scale = wp.zeros(1, dtype=wp.float32, requires_grad=requires_grad)
+            self.sigmoid_scale = wp.array([1.0], dtype=wp.float32)
+
             # Contact Jacobian matrix
             self.Jc = wp.zeros((self.Jc_size,), dtype=wp.float32, device=model.device, requires_grad=model.requires_grad)
             # self.Jc = wp.zeros(self.Jc_size, dtype=wp.float32, requires_grad=True)
@@ -2441,6 +2444,24 @@ class MoreauIntegrator(Integrator):
             self.allocate_state_aux_vars(model, state_aug, requires_grad)
         if control is None:
             control = model.control(clone_variables=False)
+
+        # EXPLICIT clearing for Moreau Specific State additions
+        if model.articulation_count:
+            # Zero contact forces that accumulate
+            state_aug.body_f_s.zero_()           # Spatial contact forces
+            
+            if hasattr(state_aug, 'percussion'):
+                state_aug.percussion.zero_()      # Contact impulses
+                
+            # Zero contact computation intermediates (safer to clear these too)
+            if hasattr(state_aug, 'c_vec'):
+                state_aug.c_vec.zero_()
+            if hasattr(state_aug, 'c'):
+                state_aug.c.zero_()
+            if hasattr(state_aug, 'Jc_qd'):
+                state_aug.Jc_qd.zero_()
+            if hasattr(state_aug, 'Jc_times_inv_m_times_h'):
+                state_aug.Jc_times_inv_m_times_h.zero_()
 
         with wp.ScopedTimer("simulate", False):
             particle_f = None
@@ -3256,7 +3277,7 @@ class MoreauIntegrator(Integrator):
             device=model.device,
         )
 
-    def eval_contact_forces(self, model, state_mid, dt, mu = 0.5, prox_iter = 20, mode = "hard"):
+    def eval_contact_forces(self, model, state_mid, dt, mu = 0.0, prox_iter = 50, mode = "soft"):
         # prox iteration
         # kernel 7
         if mode == "hard":
@@ -3271,7 +3292,7 @@ class MoreauIntegrator(Integrator):
             wp.launch(
                 kernel=prox_iteration_unrolled_soft,
                 dim=model.articulation_count,
-                inputs=[state_mid.point_vec, self.G_mat, state_mid.c_vec, mu, prox_iter, model.sigmoid_scale],
+                inputs=[state_mid.point_vec, self.G_mat, state_mid.c_vec, mu, prox_iter, self.sigmoid_scale], # before model.sigmoid_scale
                 outputs=[state_mid.percussion],
                 device=model.device,
             )
