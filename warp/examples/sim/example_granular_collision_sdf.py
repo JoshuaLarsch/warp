@@ -60,6 +60,19 @@ class Example:
             mass=0.1,
             jitter=self.radius * 0.1,
         )
+        # builder.add_particle_grid(
+        #     dim_x=1,
+        #     dim_y=1,
+        #     dim_z=1,
+        #     cell_x=self.radius * 2.0,
+        #     cell_y=self.radius * 2.0,
+        #     cell_z=self.radius * 2.0,
+        #     pos=wp.vec3(0.0, 20.0, 0.0),
+        #     rot=wp.quat_identity(),
+        #     vel=wp.vec3(2.0, 0.0, 0.0),
+        #     mass=0.1,
+        #     jitter=self.radius * 0.1,
+        # )
         with open(os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb"), "rb") as rock_file:
             rock_vdb = wp.Volume.load_from_nvdb(rock_file.read())
 
@@ -72,9 +85,11 @@ class Example:
             mu=0.5,
             sdf=rock_sdf,
             body=-1,
+            # pos=wp.vec3(0.0, -10.0, 0.0),
             pos=wp.vec3(0.0, 0.0, 0.0),
             rot=wp.quat(0.0, 0.0, 0.0, 1.0),
             scale=wp.vec3(1.0, 1.0, 1.0),
+
         )
 
         mins = np.array([-3.0, -3.0, -3.0])
