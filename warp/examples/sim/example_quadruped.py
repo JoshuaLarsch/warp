@@ -31,6 +31,7 @@ import warp as wp
 import warp.examples
 import warp.sim
 import warp.sim.render
+import time
 
 
 # Taken from env/environment.py
@@ -97,6 +98,26 @@ class Example:
 
         builder = wp.sim.ModelBuilder()
 
+        # # SDFGround
+        # self.rock_path_usd = os.path.join(warp.examples.get_asset_directory(), "rocks.usd")
+        # self.rock_path_nvdb = os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb")
+        # with open(self.rock_path_nvdb, "rb") as rock_file:
+        #     rock_vdb = wp.Volume.load_from_nvdb(rock_file.read())
+
+        # rock_sdf = wp.sim.SDF(rock_vdb)
+
+        # builder.add_shape_sdf(
+        #     ke=1.0e4,
+        #     kd=1000.0,
+        #     kf=1000.0,
+        #     mu=0.5,
+        #     sdf=rock_sdf,
+        #     body=-1,
+        #     pos=wp.vec3(1.0, -10, 0.5),
+        #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+        #     scale=wp.vec3(1.0, 1.0, 1.0),
+        # )
+
         self.sim_time = 0.0
         fps = 100
         self.frame_dt = 1.0 / fps
@@ -114,6 +135,28 @@ class Example:
 
             builder.joint_axis_mode = [wp.sim.JOINT_MODE_TARGET_POSITION] * len(builder.joint_axis_mode)
             builder.joint_act[-12:] = [0.2, 0.4, -0.6, -0.2, -0.4, 0.6, -0.2, 0.4, -0.6, 0.2, -0.4, 0.6]
+
+        foot_shape_names = ["LF_SHANK", "RF_SHANK", "LH_SHANK", "RH_SHANK"]
+        foot_shape_indices = []
+
+        # Find foot shapes by examining body names
+        for shape_idx in range(len(builder.shape_body)):
+            body_idx = builder.shape_body[shape_idx]
+            if body_idx >= 0:  # Not a static shape.
+                body_name = builder.body_name[body_idx]
+                if any(foot_name in body_name for foot_name in foot_shape_names):
+                    foot_shape_indices.append(shape_idx)
+
+        # Disable all shape-shape and ground collisions by default
+        for i in range(len(builder.shape_ground_collision)):
+            builder.shape_ground_collision[i] = False  # No ground collision
+            builder.shape_shape_collision[i] = False   # No shape-shape collision
+
+        # Enable ONLY foot-ground collisions
+        for foot_idx in foot_shape_indices:
+            builder.shape_ground_collision[foot_idx] = True   # Feet can touch ground
+            builder.shape_shape_collision[foot_idx] = True   # But not each other
+
 
         np.set_printoptions(suppress=True)
         # finalize model
@@ -134,21 +177,25 @@ class Example:
         self.integrator = wp.sim.MoreauIntegrator(
             self.model, use_tile_gemm=self.use_tile_gemm, fuse_cholesky=self.fuse_cholesky
         )
+        # self.integrator = wp.sim.ClemensMoreauIntegrator(
+        #     self.model, use_tile_gemm=self.use_tile_gemm, fuse_cholesky=self.fuse_cholesky
+        # )
 
         if stage_path:
             self.renderer = wp.sim.render.SimRenderer(self.model, stage_path)
         else:
             self.renderer = None
 
-        self.state_0 = self.model.state()
-        self.state_1 = self.model.state()
+        self.state_0 = self.model.state(requires_grad=True)
+        self.state_1 = self.model.state(requires_grad=True)
+        self.state_mid = self.model.state(requires_grad=True)
 
         wp.sim.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, None, self.state_0)
 
         # simulate() allocates memory via a clone, so we can't use graph capture if the device does not support mempools
-        self.use_cuda_graph = wp.get_device().is_cuda and wp.is_mempool_enabled(wp.get_device())    
-        # print("Graph Capture temporarily disabled for debugging")
-        # self.use_cuda_graph = False
+        # self.use_cuda_graph = wp.get_device().is_cuda and wp.is_mempool_enabled(wp.get_device())    
+        print("Graph Capture temporarily disabled for debugging")
+        self.use_cuda_graph = False
 
         if self.use_cuda_graph:
             with wp.ScopedCapture() as capture:
@@ -161,8 +208,10 @@ class Example:
         for _ in range(self.sim_substeps):
             self.state_0.clear_forces()
             wp.sim.collide(self.model, self.state_0)
-            self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
+            # self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
+            self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt, state_mid = self.state_mid)
             self.state_0, self.state_1 = self.state_1, self.state_0
+            # time.sleep(0.2)
 
     def step(self):
         with wp.ScopedTimer("step"):
@@ -175,7 +224,14 @@ class Example:
     def render(self):
         if self.renderer is None:
             return
-
+        # self.renderer.render_ref(
+        #     name="collision",
+        #     path=self.rock_path_usd,
+        #     pos=wp.vec3(1.0, -10, 0.5),
+        #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+        #     scale=wp.vec3(1.0, 1.0, 1.0),
+        #     color=(0.35, 0.55, 0.9),
+        # )
         with wp.ScopedTimer("render"):
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render(self.state_0)
