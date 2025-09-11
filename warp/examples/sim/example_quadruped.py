@@ -119,7 +119,7 @@ class Example:
         # )
 
         self.sim_time = 0.0
-        fps = 100
+        fps = 100 # lowered to test instability CHANGED from 100
         self.frame_dt = 1.0 / fps
 
         self.sim_substeps = 10
@@ -208,8 +208,8 @@ class Example:
         for _ in range(self.sim_substeps):
             self.state_0.clear_forces()
             wp.sim.collide(self.model, self.state_0)
-            # self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
-            self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt, state_mid = self.state_mid)
+            self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
+            # self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt, state_mid = self.state_mid)
             self.state_0, self.state_1 = self.state_1, self.state_0
             # time.sleep(0.2)
 
