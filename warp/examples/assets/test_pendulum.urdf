@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<robot name="test_pendulum">
+
+  <link name="base">
+    <visual>
+      <geometry>
+        <cylinder length="0.1" radius="0.02"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.8 0.8 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.1" radius="0.02"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="100.0"/> <inertia ixx="10" ixy="0" ixz="0" iyy="10" iyz="0" izz="10"/>
+    </inertial>
+  </link>
+
+  <link name="bob">
+    <visual>
+      <geometry>
+        <cylinder length="0.4" radius="0.025"/>
+      </geometry>
+      <origin xyz="0 0 -0.2"/> <material name="blue">
+        <color rgba="0.1 0.1 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.4" radius="0.025"/>
+      </geometry>
+      <origin xyz="0 0 -0.2"/>
+    </collision>
+    <inertial>
+      <mass value="1.0"/>
+      <origin xyz="0 0 -0.2"/>
+      <inertia ixx="0.013" ixy="0" ixz="0" iyy="0.013" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="hinge" type="revolute">
+    <parent link="base"/>
+    <child link="bob"/>
+    <origin xyz="0 0 0"/>      <axis xyz="1 0 0"/>        <limit effort="10.0" velocity="10.0" lower="-3.14" upper="3.14"/>
+    <dynamics damping="0.1"/>  </joint>
+
+</robot>

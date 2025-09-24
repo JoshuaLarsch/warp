@@ -80,9 +80,21 @@ class Example:
     def __init__(self, stage_path="example_quadruped.usd", num_envs=8):
         articulation_builder = wp.sim.ModelBuilder()
         wp.sim.parse_urdf(
-            os.path.join(warp.examples.get_asset_directory(), "quadruped.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "quadruped.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "quadruped_fixed.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_cube.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_dumbbell.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_sphere.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_tetrahedral.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_corner_cube.urdf"),
+            os.path.join(warp.examples.get_asset_directory(), "test_flapper.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_flapper_fixed.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_pendulum.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "quadruped_damped.urdf"),
             articulation_builder,
-            xform=wp.transform([0.0, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)),
+            # xform=wp.transform([0.0, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)), # CHANGED TO HAVE CONTACT MUCH EARLIER
+            # xform=wp.transform([0.0, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)),
+            xform=wp.transform([0.0, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.45)),
             floating=True,
             density=1000,
             armature=0.01,
@@ -95,6 +107,19 @@ class Example:
             limit_ke=1.0e4,
             limit_kd=1.0e1,
         )
+        # stage_path = "quadruped_fixed.usd"
+        # stage_path = "test_cube.usd"
+        # stage_path = "test_dumbbell.usd"
+        # stage_path = "test_sphere.usd"
+        # stage_path = "test_tetrahedral.usd"
+        # stage_path = "test_corner_cube.usd"
+        stage_path = "test_flapper.usd"
+        # stage_path = "test_flapper_fixed.usd"
+        # tage_path = "test_pendulum.usd"
+        # stage_path = "quadruped_damped.usd"
+        
+
+        
 
         builder = wp.sim.ModelBuilder()
 
@@ -122,7 +147,7 @@ class Example:
         fps = 100 # lowered to test instability CHANGED from 100
         self.frame_dt = 1.0 / fps
 
-        self.sim_substeps = 10
+        self.sim_substeps = 10 # CHANGED from 10
         self.sim_dt = self.frame_dt / self.sim_substeps
 
         self.num_envs = num_envs
@@ -131,31 +156,33 @@ class Example:
         for i in range(self.num_envs):
             builder.add_builder(articulation_builder, xform=wp.transform(offsets[i], wp.quat_identity()))
 
-            builder.joint_q[-12:] = [0.2, 0.4, -0.6, -0.2, -0.4, 0.6, -0.2, 0.4, -0.6, 0.2, -0.4, 0.6]
+            # builder.joint_q[-12:] = [0.2, 0.4, -0.6, -0.2, -0.4, 0.6, -0.2, 0.4, -0.6, 0.2, -0.4, 0.6]
 
             builder.joint_axis_mode = [wp.sim.JOINT_MODE_TARGET_POSITION] * len(builder.joint_axis_mode)
-            builder.joint_act[-12:] = [0.2, 0.4, -0.6, -0.2, -0.4, 0.6, -0.2, 0.4, -0.6, 0.2, -0.4, 0.6]
+            # builder.joint_act[-12:] = [0.2, 0.4, -0.6, -0.2, -0.4, 0.6, -0.2, 0.4, -0.6, 0.2, -0.4, 0.6]
 
-        foot_shape_names = ["LF_SHANK", "RF_SHANK", "LH_SHANK", "RH_SHANK"]
-        foot_shape_indices = []
+        FilterFootContacts = False
+        if FilterFootContacts:
+            foot_shape_names = ["LF_SHANK", "RF_SHANK", "LH_SHANK", "RH_SHANK"]
+            foot_shape_indices = []
 
-        # Find foot shapes by examining body names
-        for shape_idx in range(len(builder.shape_body)):
-            body_idx = builder.shape_body[shape_idx]
-            if body_idx >= 0:  # Not a static shape.
-                body_name = builder.body_name[body_idx]
-                if any(foot_name in body_name for foot_name in foot_shape_names):
-                    foot_shape_indices.append(shape_idx)
+            # Find foot shapes by examining body names
+            for shape_idx in range(len(builder.shape_body)):
+                body_idx = builder.shape_body[shape_idx]
+                if body_idx >= 0:  # Not a static shape.
+                    body_name = builder.body_name[body_idx]
+                    if any(foot_name in body_name for foot_name in foot_shape_names):
+                        foot_shape_indices.append(shape_idx)
 
-        # Disable all shape-shape and ground collisions by default
-        for i in range(len(builder.shape_ground_collision)):
-            builder.shape_ground_collision[i] = False  # No ground collision
-            builder.shape_shape_collision[i] = False   # No shape-shape collision
+            # Disable all shape-shape and ground collisions by default
+            for i in range(len(builder.shape_ground_collision)):
+                # builder.shape_ground_collision[i] = False  # No ground collision
+                builder.shape_shape_collision[i] = False   # No shape-shape collision
 
-        # Enable ONLY foot-ground collisions
-        for foot_idx in foot_shape_indices:
-            builder.shape_ground_collision[foot_idx] = True   # Feet can touch ground
-            builder.shape_shape_collision[foot_idx] = True   # But not each other
+            # Enable ONLY foot-ground collisions
+            # for foot_idx in foot_shape_indices:
+            #     builder.shape_ground_collision[foot_idx] = True   # Feet can touch ground
+            #     builder.shape_shape_collision[foot_idx] = False   # But not each other
 
 
         np.set_printoptions(suppress=True)
@@ -164,10 +191,14 @@ class Example:
         self.model.ground = True
         # self.model.gravity = 0.0
 
+        ############### INCREASE OF CONTACT MARGIN:
+        #self.model.soft_contact_margin = 0.5
+        #self.model.rigid_contact_margin = 0.2
+
         self.model.joint_attach_ke = 16000.0
         self.model.joint_attach_kd = 200.0
-        self.use_tile_gemm = False
-        self.fuse_cholesky = False
+        self.use_tile_gemm = True
+        self.fuse_cholesky = self.use_tile_gemm
 
         # self.integrator = wp.sim.XPBDIntegrator()
         # self.integrator = wp.sim.SemiImplicitIntegrator()
@@ -211,7 +242,11 @@ class Example:
             self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
             # self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt, state_mid = self.state_mid)
             self.state_0, self.state_1 = self.state_1, self.state_0
-            # time.sleep(0.2)
+            stopVar = 84 # 72
+            # if self.integrator._step > stopVar:
+            #     time.sleep(1.5)
+            # if self.integrator._step > stopVar+10:
+            #     time.sleep(1000)
 
     def step(self):
         with wp.ScopedTimer("step"):

@@ -1,0 +1,72 @@
+<?xml version="1.0" ?>
+<robot name="test_dumbbell">
+  <link name="base">
+    <visual>
+      <geometry>
+        <cylinder length="0.5" radius="0.01"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.8 0.8 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.5" radius="0.01"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.2"/> <inertia ixx="0.000418" ixy="0.0" ixz="0.0" iyy="0.000418" iyz="0.0" izz="0.000001"/>
+    </inertial>
+  </link>
+
+  <link name="left_sphere">
+    <visual>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.1 0.1 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.4"/> <inertia ixx="0.0004" ixy="0.0" ixz="0.0" iyy="0.0004" iyz="0.0" izz="0.0004"/>
+    </inertial>
+  </link>
+
+  <link name="right_sphere">
+    <visual>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.1 0.1 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.4"/> <inertia ixx="0.0004" ixy="0.0" ixz="0.0" iyy="0.0004" iyz="0.0" izz="0.0004"/>
+    </inertial>
+  </link>
+  
+  <joint name="joint_left" type="fixed">
+    <parent link="base"/>
+    <child link="left_sphere"/>
+    <origin xyz="0 0 0.25"/>
+  </joint>
+
+  <joint name="joint_right" type="fixed">
+    <parent link="base"/>
+    <child link="right_sphere"/>
+    <origin xyz="0 0 -0.25"/>
+  </joint>
+
+</robot>

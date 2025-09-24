@@ -1,0 +1,176 @@
+<?xml version="1.0" ?>
+<robot name="test_tetrahedral">
+
+  <link name="base">
+    <visual>
+      <geometry>
+        <sphere radius="0.1"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.8 0.8 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.1"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="2.0"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.008"/>
+    </inertial>
+  </link>
+
+  <joint name="joint_leg_1" type="fixed">
+    <parent link="base"/>
+    <child link="leg_1"/>
+    <origin xyz="0.08 0.0 -0.05" rpy="0.0 -0.8 0.0"/>
+  </joint>
+  <link name="leg_1">
+    <visual>
+      <geometry>
+        <cylinder length="0.2" radius="0.015"/>
+      </geometry>
+      <origin xyz="0 0 -0.1"/>
+      <material name="blue">
+        <color rgba="0.1 0.1 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.2" radius="0.015"/>
+      </geometry>
+      <origin xyz="0 0 -0.1"/>
+    </collision>
+    <inertial>
+      <mass value="0.2"/>
+      <origin xyz="0 0 -0.1"/>
+      <inertia ixx="0.00067" ixy="0" ixz="0" iyy="0.00067" iyz="0" izz="0.00001"/>
+    </inertial>
+  </link>
+
+  <joint name="joint_foot_1" type="fixed">
+    <parent link="leg_1"/>
+    <child link="foot_1"/>
+    <origin xyz="0 0 -0.2"/>
+  </joint>
+  <link name="foot_1">
+    <visual>
+      <geometry>
+        <sphere radius="0.03"/>
+      </geometry>
+      <material name="red">
+        <color rgba="0.8 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.03"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.000036" ixy="0" ixz="0" iyy="0.000036" iyz="0" izz="0.000036"/>
+    </inertial>
+  </link>
+
+  <joint name="joint_leg_2" type="fixed">
+    <parent link="base"/>
+    <child link="leg_2"/>
+    <origin xyz="-0.04 0.07 -0.05" rpy="-0.8 0.4 -1.57"/>
+  </joint>
+  <link name="leg_2">
+    <visual>
+      <geometry>
+        <cylinder length="0.2" radius="0.015"/>
+      </geometry>
+      <origin xyz="0 0 -0.1"/>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.2" radius="0.015"/>
+      </geometry>
+      <origin xyz="0 0 -0.1"/>
+    </collision>
+    <inertial>
+      <mass value="0.2"/>
+      <origin xyz="0 0 -0.1"/>
+      <inertia ixx="0.00067" ixy="0" ixz="0" iyy="0.00067" iyz="0" izz="0.00001"/>
+    </inertial>
+  </link>
+
+  <joint name="joint_foot_2" type="fixed">
+    <parent link="leg_2"/>
+    <child link="foot_2"/>
+    <origin xyz="0 0 -0.2"/>
+  </joint>
+  <link name="foot_2">
+    <visual>
+      <geometry>
+        <sphere radius="0.03"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.03"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.000036" ixy="0" ixz="0" iyy="0.000036" iyz="0" izz="0.000036"/>
+    </inertial>
+  </link>
+
+  <joint name="joint_leg_3" type="fixed">
+    <parent link="base"/>
+    <child link="leg_3"/>
+    <origin xyz="-0.04 -0.07 -0.05" rpy="0.8 0.4 1.57"/>
+  </joint>
+  <link name="leg_3">
+    <visual>
+      <geometry>
+        <cylinder length="0.2" radius="0.015"/>
+      </geometry>
+      <origin xyz="0 0 -0.1"/>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.2" radius="0.015"/>
+      </geometry>
+      <origin xyz="0 0 -0.1"/>
+    </collision>
+    <inertial>
+      <mass value="0.2"/>
+      <origin xyz="0 0 -0.1"/>
+      <inertia ixx="0.00067" ixy="0" ixz="0" iyy="0.00067" iyz="0" izz="0.00001"/>
+    </inertial>
+  </link>
+
+  <joint name="joint_foot_3" type="fixed">
+    <parent link="leg_3"/>
+    <child link="foot_3"/>
+    <origin xyz="0 0 -0.2"/>
+  </joint>
+  <link name="foot_3">
+    <visual>
+      <geometry>
+        <sphere radius="0.03"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.03"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.000036" ixy="0" ixz="0" iyy="0.000036" iyz="0" izz="0.000036"/>
+    </inertial>
+  </link>
+
+</robot>

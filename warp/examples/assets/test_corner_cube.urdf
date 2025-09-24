@@ -1,0 +1,114 @@
+<?xml version="1.0" ?>
+<robot name="test_corner_cube">
+
+  <link name="base">
+    <visual>
+      <geometry>
+        <box size="0.2 0.2 0.2"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.8 0.8 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.2 0.2 0.2"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="2.0"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.01333" ixy="0.0" ixz="0.0" iyy="0.01333" iyz="0.0" izz="0.01333"/>
+    </inertial>
+  </link>
+
+  <link name="corner_1">
+    <visual><geometry><sphere radius="0.02"/></geometry><material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material></visual>
+    <collision><geometry><sphere radius="0.02"/></geometry></collision>
+    <inertial><mass value="0.05"/><inertia ixx="0.000008" ixy="0" ixz="0" iyy="0.000008" iyz="0" izz="0.000008"/></inertial>
+  </link>
+  <link name="corner_2">
+    <visual><geometry><sphere radius="0.02"/></geometry><material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material></visual>
+    <collision><geometry><sphere radius="0.02"/></geometry></collision>
+    <inertial><mass value="0.05"/><inertia ixx="0.000008" ixy="0" ixz="0" iyy="0.000008" iyz="0" izz="0.000008"/></inertial>
+  </link>
+  <link name="corner_3">
+    <visual><geometry><sphere radius="0.02"/></geometry><material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material></visual>
+    <collision><geometry><sphere radius="0.02"/></geometry></collision>
+    <inertial><mass value="0.05"/><inertia ixx="0.000008" ixy="0" ixz="0" iyy="0.000008" iyz="0" izz="0.000008"/></inertial>
+  </link>
+  <link name="corner_4">
+    <visual><geometry><sphere radius="0.02"/></geometry><material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material></visual>
+    <collision><geometry><sphere radius="0.02"/></geometry></collision>
+    <inertial><mass value="0.05"/><inertia ixx="0.000008" ixy="0" ixz="0" iyy="0.000008" iyz="0" izz="0.000008"/></inertial>
+  </link>
+  <link name="corner_5">
+    <visual><geometry><sphere radius="0.02"/></geometry><material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material></visual>
+    <collision><geometry><sphere radius="0.02"/></geometry></collision>
+    <inertial><mass value="0.05"/><inertia ixx="0.000008" ixy="0" ixz="0" iyy="0.000008" iyz="0" izz="0.000008"/></inertial>
+  </link>
+  <link name="corner_6">
+    <visual><geometry><sphere radius="0.02"/></geometry><material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material></visual>
+    <collision><geometry><sphere radius="0.02"/></geometry></collision>
+    <inertial><mass value="0.05"/><inertia ixx="0.000008" ixy="0" ixz="0" iyy="0.000008" iyz="0" izz="0.000008"/></inertial>
+  </link>
+  <link name="corner_7">
+    <visual><geometry><sphere radius="0.02"/></geometry><material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material></visual>
+    <collision><geometry><sphere radius="0.02"/></geometry></collision>
+    <inertial><mass value="0.05"/><inertia ixx="0.000008" ixy="0" ixz="0" iyy="0.000008" iyz="0" izz="0.000008"/></inertial>
+  </link>
+  <link name="corner_8">
+    <visual><geometry><sphere radius="0.02"/></geometry><material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material></visual>
+    <collision><geometry><sphere radius="0.02"/></geometry></collision>
+    <inertial><mass value="0.05"/><inertia ixx="0.000008" ixy="0" ixz="0" iyy="0.000008" iyz="0" izz="0.000008"/></inertial>
+  </link>
+
+  <joint name="joint_1" type="fixed">
+    <parent link="base"/>
+    <child link="corner_1"/>
+    <origin xyz="0.1 0.1 0.1"/>
+  </joint>
+
+  <joint name="joint_2" type="fixed">
+    <parent link="base"/>
+    <child link="corner_2"/>
+    <origin xyz="0.1 0.1 -0.1"/>
+  </joint>
+
+  <joint name="joint_3" type="fixed">
+    <parent link="base"/>
+    <child link="corner_3"/>
+    <origin xyz="0.1 -0.1 0.1"/>
+  </joint>
+
+  <joint name="joint_4" type="fixed">
+    <parent link="base"/>
+    <child link="corner_4"/>
+    <origin xyz="0.1 -0.1 -0.1"/>
+  </joint>
+
+  <joint name="joint_5" type="fixed">
+    <parent link="base"/>
+    <child link="corner_5"/>
+    <origin xyz="-0.1 0.1 0.1"/>
+  </joint>
+
+  <joint name="joint_6" type="fixed">
+    <parent link="base"/>
+    <child link="corner_6"/>
+    <origin xyz="-0.1 0.1 -0.1"/>
+  </joint>
+
+  <joint name="joint_7" type="fixed">
+    <parent link="base"/>
+    <child link="corner_7"/>
+    <origin xyz="-0.1 -0.1 0.1"/>
+  </joint>
+
+  <joint name="joint_8" type="fixed">
+    <parent link="base"/>
+    <child link="corner_8"/>
+    <origin xyz="-0.1 -0.1 -0.1"/>
+  </joint>
+
+</robot>
