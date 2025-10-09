@@ -1961,6 +1961,7 @@ def construct_contact_jacobian(
     Jc: wp.array(dtype=float),
     c_body_vec: wp.array(dtype=int),
     point_vec: wp.array(dtype=wp.vec3),
+    contact_normals: wp.array(dtype=wp.vec3), # ADDED for variable contact normals
 ):
     tid = wp.tid()  # Current articulation index
     
@@ -2061,6 +2062,7 @@ def construct_contact_jacobian(
                 # Store contact info for downstream processing
                 c_body_vec[tid * 4 + assigned_contacts] = c_body
                 point_vec[tid * 4 + assigned_contacts] = p_world
+                contact_normals[tid * 4 + assigned_contacts] = c_normal
                 assigned_contacts += 1
                 
     
@@ -2072,6 +2074,7 @@ def construct_contact_jacobian(
                 Jc_idx = Jc_offset + dense_index(dof_count, Jc_row, k)
                 Jc[Jc_idx] = 0.0
         c_body_vec[tid * 4 + contact_slot] = -1
+        contact_normals[tid * 4 + assigned_contacts] = wp.vec3(0.0, 1.0, 0.0)
         point_vec[tid * 4 + contact_slot] = wp.vec3(0.0)
         
     #DEBUG
@@ -2203,6 +2206,7 @@ def convert_c_to_vector(c: wp.array(dtype=float), c_vec: wp.array2d(dtype=wp.vec
 def prox_iteration_unrolled(
     G_mat: wp.array3d(dtype=wp.mat33),
     c_vec: wp.array2d(dtype=wp.vec3),
+    contact_normals: wp.array(dtype=wp.vec3), # ADDED
     mu: float,
     prox_iter: int,
     percussion: wp.array2d(dtype=wp.vec3),
@@ -2213,6 +2217,13 @@ def prox_iteration_unrolled(
     c_vec_1 = c_vec[tid, 1]
     c_vec_2 = c_vec[tid, 2]
     c_vec_3 = c_vec[tid, 3]
+
+
+    # Get contact normals for this articulation
+    n0 = contact_normals[tid * 4 + 0]
+    n1 = contact_normals[tid * 4 + 1]
+    n2 = contact_normals[tid * 4 + 2]
+    n3 = contact_normals[tid * 4 + 3]
 
     # initialize percussions with steady state
     p_0 = -wp.inverse(G_mat[tid, 0, 0]) * c_vec_0
@@ -2225,7 +2236,8 @@ def prox_iteration_unrolled(
     # p_2 = wp.vec3(0.0, p_2[1], 0.0)
     # p_3 = wp.vec3(0.0, p_3[1], 0.0)
 
-    p_0, p_1, p_2, p_3 = prox_loop(tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, mu, prox_iter, p_0, p_1, p_2, p_3)
+    # p_0, p_1, p_2, p_3 = prox_loop(tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, mu, prox_iter, p_0, p_1, p_2, p_3) #OLD - CHANGED FOR HANGLING CONTACT NORMALS
+    p_0, p_1, p_2, p_3 = prox_loop(tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, n0, n1, n2, n3, mu, prox_iter, p_0, p_1, p_2, p_3) # new
 
     percussion[tid, 0] = p_0
     percussion[tid, 1] = p_1
@@ -2237,6 +2249,7 @@ def prox_iteration_unrolled_soft(
     point_vec: wp.array(dtype=wp.vec3),
     G_mat: wp.array3d(dtype=wp.mat33),
     c_vec: wp.array2d(dtype=wp.vec3),
+    contact_normals: wp.array(dtype=wp.vec3), # ADDED
     mu: float,
     prox_iter: int,
     scale_array: wp.array(dtype=float),
@@ -2245,15 +2258,22 @@ def prox_iteration_unrolled_soft(
     tid = wp.tid()
 
     scale = scale_array[0]
-    n = wp.vec3(0.0, 1.0, 0.0)
+    # n = wp.vec3(0.0, 1.0, 0.0)
+
+    # Get contact normals for this articulation
+    n0 = contact_normals[tid * 4 + 0]
+    n1 = contact_normals[tid * 4 + 1]
+    n2 = contact_normals[tid * 4 + 2]
+    n3 = contact_normals[tid * 4 + 3]
+
     point_0 = point_vec[tid * 4]
     point_1 = point_vec[tid * 4 + 1]
     point_2 = point_vec[tid * 4 + 2]
     point_3 = point_vec[tid * 4 + 3]
-    c_0 = wp.dot(n, point_0)
-    c_1 = wp.dot(n, point_1)
-    c_2 = wp.dot(n, point_2)
-    c_3 = wp.dot(n, point_3)
+    c_0 = wp.dot(n0, point_0)
+    c_1 = wp.dot(n1, point_1)
+    c_2 = wp.dot(n2, point_2)
+    c_3 = wp.dot(n3, point_3)
     c_vec_0 = c_vec[tid, 0]  # * offset_sigmoid(c_0, scale, 0.0)
     c_vec_1 = c_vec[tid, 1]  # * offset_sigmoid(c_1, scale, 0.0)
     c_vec_2 = c_vec[tid, 2]  # * offset_sigmoid(c_2, scale, 0.0)
@@ -2265,8 +2285,11 @@ def prox_iteration_unrolled_soft(
     p_2 = -wp.inverse(G_mat[tid, 2, 2]) * c_vec_2
     p_3 = -wp.inverse(G_mat[tid, 3, 3]) * c_vec_3
 
+    # p_0, p_1, p_2, p_3 = prox_loop_soft(
+    #     tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, c_0, c_1, c_2, c_3, scale, mu, prox_iter, p_0, p_1, p_2, p_3
+    # )
     p_0, p_1, p_2, p_3 = prox_loop_soft(
-        tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, c_0, c_1, c_2, c_3, scale, mu, prox_iter, p_0, p_1, p_2, p_3
+        tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, n0, n1, n2, n3, c_0, c_1, c_2, c_3, scale, mu, prox_iter, p_0, p_1, p_2, p_3
     )
 
     percussion[tid, 0] = p_0 * offset_sigmoid(c_0, scale, 0.0)
@@ -2299,6 +2322,7 @@ def prox_loop(
     c_vec_1: wp.vec3,
     c_vec_2: wp.vec3,
     c_vec_3: wp.vec3,
+    n0: wp.vec3, n1: wp.vec3, n2: wp.vec3, n3: wp.vec3,  # Contact normals
     mu: float,
     prox_iter: int,
     p_0: wp.vec3,
@@ -2334,36 +2358,25 @@ def prox_loop(
         # update percussion
         p_0 = p_0 - r * (sum + c_vec_0)
 
-        # projection to friction cone
-        if p_0[1] <= 0.0:
+        # # projection to friction cone
+        # if p_0[1] <= 0.0:
+        #     p_0 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_0[0] != 0.0 or p_0[2] != 0.0:
+        #     fm = wp.sqrt(p_0[0] ** 2.0 + p_0[2] ** 2.0)  # friction magnitude
+        #     if mu * p_0[1] < fm:
+        #         p_0 = wp.vec3(p_0[0] * mu * p_0[1] / fm, p_0[1], p_0[2] * mu * p_0[1] / fm)
+
+        # HANDLE PROJECTION along contact normal and tangential direction alligned with percussion
+        p_n = wp.dot(n0, p_0)
+
+        if p_n <= 0.0:
             p_0 = wp.vec3(0.0, 0.0, 0.0)
-        elif p_0[0] != 0.0 or p_0[2] != 0.0:
-            fm = wp.sqrt(p_0[0] ** 2.0 + p_0[2] ** 2.0)  # friction magnitude
-            if mu * p_0[1] < fm:
-                p_0 = wp.vec3(p_0[0] * mu * p_0[1] / fm, p_0[1], p_0[2] * mu * p_0[1] / fm)
+        else:
+            p_tangent = p_0 - p_n * n0  # Tangent component vector
+            p_t = wp.length(p_tangent)  # Tangent magnitude
 
-        # DEBUG: Divergence check: track if percussions are exploding
-        # p_norm = wp.length(p_0)
-        # if p_norm > max_p_norm:
-        #     max_p_norm = p_norm
-        
-        # # Print every 5 iterations for first articulation
-        # if tid == 0 and it % 5 == 0:
-        #     wp.printf("Iter %2d: |p_0|=%.3f, p_0[1]=%.3f, r=%.3f\n", 
-        #              it, p_norm, p_0[1], r)
-        
-        # # Early divergence detection
-        # if p_norm > 1000.0:  # Physically unreasonable
-        #     wp.printf("DIVERGENCE at iter %d: |p|=%.3f\n", it, p_norm)
-        #     wp.printf("---------------------------------------------")
-        #     wp.printf("---------------------------------------------")
-        #     wp.printf("---------------------------------------------")
-        #     wp.printf("---------------------------------------------")
-        #     wp.printf("---------------------------------------------")
-        #     wp.printf("---------------------------------------------")
-        #     # break
-
-
+            if p_t > mu * p_n:  # Outside friction cone
+                p_0 = (mu * p_n / p_t) * p_tangent + p_n * n0 
 
         # CONTACT 1
         # calculate sum(G_ij*p_j) and sum over det(G_ij)
@@ -2384,13 +2397,25 @@ def prox_loop(
         # update percussion
         p_1 = p_1 - r * (sum + c_vec_1)
 
-        # projection to friction cone
-        if p_1[1] <= 0.0:
+        # # projection to friction cone
+        # if p_1[1] <= 0.0:
+        #     p_1 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_1[0] != 0.0 or p_1[2] != 0.0:
+        #     fm = wp.sqrt(p_1[0] ** 2.0 + p_1[2] ** 2.0)  # friction magnitude
+        #     if mu * p_1[1] < fm:
+        #         p_1 = wp.vec3(p_1[0] * mu * p_1[1] / fm, p_1[1], p_1[2] * mu * p_1[1] / fm)
+
+        # HANDLE PROJECTION along contact normal and tangential direction alligned with percussion
+        p_n = wp.dot(n1, p_1)
+
+        if p_n <= 0.0:
             p_1 = wp.vec3(0.0, 0.0, 0.0)
-        elif p_1[0] != 0.0 or p_1[2] != 0.0:
-            fm = wp.sqrt(p_1[0] ** 2.0 + p_1[2] ** 2.0)  # friction magnitude
-            if mu * p_1[1] < fm:
-                p_1 = wp.vec3(p_1[0] * mu * p_1[1] / fm, p_1[1], p_1[2] * mu * p_1[1] / fm)
+        else:
+            p_tangent = p_1 - p_n * n1  # Tangent component vector
+            p_t = wp.length(p_tangent)  # Tangent magnitude
+
+            if p_t > mu * p_n:  # Outside friction cone
+                p_1 = (mu * p_n / p_t) * p_tangent + p_n * n1 
 
         # CONTACT 2
         # calculate sum(G_ij*p_j) and sum over det(G_ij)
@@ -2411,13 +2436,25 @@ def prox_loop(
         # update percussion
         p_2 = p_2 - r * (sum + c_vec_2)
 
-        # projection to friction cone
-        if p_2[1] <= 0.0:
+        # # projection to friction cone
+        # if p_2[1] <= 0.0:
+        #     p_2 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_2[0] != 0.0 or p_2[2] != 0.0:
+        #     fm = wp.sqrt(p_2[0] ** 2.0 + p_2[2] ** 2.0)  # friction magnitude
+        #     if mu * p_2[1] < fm:
+        #         p_2 = wp.vec3(p_2[0] * mu * p_2[1] / fm, p_2[1], p_2[2] * mu * p_2[1] / fm)
+
+        # HANDLE PROJECTION along contact normal and tangential direction alligned with percussion
+        p_n = wp.dot(n2, p_2)
+
+        if p_n <= 0.0:
             p_2 = wp.vec3(0.0, 0.0, 0.0)
-        elif p_2[0] != 0.0 or p_2[2] != 0.0:
-            fm = wp.sqrt(p_2[0] ** 2.0 + p_2[2] ** 2.0)  # friction magnitude
-            if mu * p_2[1] < fm:
-                p_2 = wp.vec3(p_2[0] * mu * p_2[1] / fm, p_2[1], p_2[2] * mu * p_2[1] / fm)
+        else:
+            p_tangent = p_2 - p_n * n2  # Tangent component vector
+            p_t = wp.length(p_tangent)  # Tangent magnitude
+
+            if p_t > mu * p_n:  # Outside friction cone
+                p_2 = (mu * p_n / p_t) * p_tangent + p_n * n2 
 
         # CONTACT 3
         # calculate sum(G_ij*p_j) and sum over det(G_ij)
@@ -2438,13 +2475,25 @@ def prox_loop(
         # update percussion
         p_3 = p_3 - r * (sum + c_vec_3)
 
-        # projection to friction cone
-        if p_3[1] <= 0.0:
+        # # projection to friction cone
+        # if p_3[1] <= 0.0:
+        #     p_3 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_3[0] != 0.0 or p_3[2] != 0.0:
+        #     fm = wp.sqrt(p_3[0] ** 2.0 + p_3[2] ** 2.0)  # friction magnitude
+        #     if mu * p_3[1] < fm:
+        #         p_3 = wp.vec3(p_3[0] * mu * p_3[1] / fm, p_3[1], p_3[2] * mu * p_3[1] / fm)
+
+        # HANDLE PROJECTION along contact normal and tangential direction alligned with percussion
+        p_n = wp.dot(n3, p_3)
+
+        if p_n <= 0.0:
             p_3 = wp.vec3(0.0, 0.0, 0.0)
-        elif p_3[0] != 0.0 or p_3[2] != 0.0:
-            fm = wp.sqrt(p_3[0] ** 2.0 + p_3[2] ** 2.0)  # friction magnitude
-            if mu * p_3[1] < fm:
-                p_3 = wp.vec3(p_3[0] * mu * p_3[1] / fm, p_3[1], p_3[2] * mu * p_3[1] / fm)
+        else:
+            p_tangent = p_3 - p_n * n3  # Tangent component vector
+            p_t = wp.length(p_tangent)  # Tangent magnitude
+
+            if p_t > mu * p_n:  # Outside friction cone
+                p_3 = (mu * p_n / p_t) * p_tangent + p_n * n3 
 
     return p_0, p_1, p_2, p_3
 
@@ -2456,6 +2505,7 @@ def prox_loop_soft(
     c_vec_1: wp.vec3,
     c_vec_2: wp.vec3,
     c_vec_3: wp.vec3,
+    n0: wp.vec3, n1: wp.vec3, n2: wp.vec3, n3: wp.vec3,  # Contact normals
     c_0: float,
     c_1: float,
     c_2: float,
@@ -2491,13 +2541,24 @@ def prox_loop_soft(
         # update percussion
         p_0 = p_0 - r * (sum + c_vec_0)
 
-        # projection to friction cone
-        if p_0[1] <= 0.0:
+        # # projection to friction cone
+        # if p_0[1] <= 0.0:
+        #     p_0 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_0[0] != 0.0 or p_0[2] != 0.0:
+        #     fm = wp.sqrt(p_0[0] ** 2.0 + p_0[2] ** 2.0)  # friction magnitude
+        #     if mu * p_0[1] < fm:
+        #         p_0 = wp.vec3(p_0[0] * mu * p_0[1] / fm, p_0[1], p_0[2] * mu * p_0[1] / fm)
+
+        p_n = wp.dot(n0, p_0)
+
+        if p_n <= 0.0:
             p_0 = wp.vec3(0.0, 0.0, 0.0)
-        elif p_0[0] != 0.0 or p_0[2] != 0.0:
-            fm = wp.sqrt(p_0[0] ** 2.0 + p_0[2] ** 2.0)  # friction magnitude
-            if mu * p_0[1] < fm:
-                p_0 = wp.vec3(p_0[0] * mu * p_0[1] / fm, p_0[1], p_0[2] * mu * p_0[1] / fm)
+        else:
+            p_tangent = p_0 - p_n * n0  # Tangent component vector
+            p_t = wp.length(p_tangent)  # Tangent magnitude
+
+            if p_t > mu * p_n:  # Outside friction cone
+                p_0 = (mu * p_n / p_t) * p_tangent + p_n * n0 
 
         # CONTACT 1
         # calculate sum(G_ij*p_j) and sum over det(G_ij)
@@ -2518,13 +2579,24 @@ def prox_loop_soft(
         # update percussion
         p_1 = p_1 - r * (sum + c_vec_1)
 
-        # projection to friction cone
-        if p_1[1] <= 0.0:
+        # # projection to friction cone
+        # if p_1[1] <= 0.0:
+        #     p_1 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_1[0] != 0.0 or p_1[2] != 0.0:
+        #     fm = wp.sqrt(p_1[0] ** 2.0 + p_1[2] ** 2.0)  # friction magnitude
+        #     if mu * p_1[1] < fm:
+        #         p_1 = wp.vec3(p_1[0] * mu * p_1[1] / fm, p_1[1], p_1[2] * mu * p_1[1] / fm)
+
+        p_n = wp.dot(n1, p_1)
+
+        if p_n <= 0.0:
             p_1 = wp.vec3(0.0, 0.0, 0.0)
-        elif p_1[0] != 0.0 or p_1[2] != 0.0:
-            fm = wp.sqrt(p_1[0] ** 2.0 + p_1[2] ** 2.0)  # friction magnitude
-            if mu * p_1[1] < fm:
-                p_1 = wp.vec3(p_1[0] * mu * p_1[1] / fm, p_1[1], p_1[2] * mu * p_1[1] / fm)
+        else:
+            p_tangent = p_1 - p_n * n1  # Tangent component vector
+            p_t = wp.length(p_tangent)  # Tangent magnitude
+
+            if p_t > mu * p_n:  # Outside friction cone
+                p_1 = (mu * p_n / p_t) * p_tangent + p_n * n1 
 
         # CONTACT 2
         # calculate sum(G_ij*p_j) and sum over det(G_ij)
@@ -2545,13 +2617,24 @@ def prox_loop_soft(
         # update percussion
         p_2 = p_2 - r * (sum + c_vec_2)
 
-        # projection to friction cone
-        if p_2[1] <= 0.0:
+        # # projection to friction cone
+        # if p_2[1] <= 0.0:
+        #     p_2 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_2[0] != 0.0 or p_2[2] != 0.0:
+        #     fm = wp.sqrt(p_2[0] ** 2.0 + p_2[2] ** 2.0)  # friction magnitude
+        #     if mu * p_2[1] < fm:
+        #         p_2 = wp.vec3(p_2[0] * mu * p_2[1] / fm, p_2[1], p_2[2] * mu * p_2[1] / fm)
+
+        p_n = wp.dot(n2, p_2)
+
+        if p_n <= 0.0:
             p_2 = wp.vec3(0.0, 0.0, 0.0)
-        elif p_2[0] != 0.0 or p_2[2] != 0.0:
-            fm = wp.sqrt(p_2[0] ** 2.0 + p_2[2] ** 2.0)  # friction magnitude
-            if mu * p_2[1] < fm:
-                p_2 = wp.vec3(p_2[0] * mu * p_2[1] / fm, p_2[1], p_2[2] * mu * p_2[1] / fm)
+        else:
+            p_tangent = p_2 - p_n * n2  # Tangent component vector
+            p_t = wp.length(p_tangent)  # Tangent magnitude
+
+            if p_t > mu * p_n:  # Outside friction cone
+                p_2 = (mu * p_n / p_t) * p_tangent + p_n * n2 
 
         # CONTACT 3
         # calculate sum(G_ij*p_j) and sum over det(G_ij)
@@ -2572,13 +2655,24 @@ def prox_loop_soft(
         # update percussion
         p_3 = p_3 - r * (sum + c_vec_3)
 
-        # projection to friction cone
-        if p_3[1] <= 0.0:
+        # # projection to friction cone
+        # if p_3[1] <= 0.0:
+        #     p_3 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_3[0] != 0.0 or p_3[2] != 0.0:
+        #     fm = wp.sqrt(p_3[0] ** 2.0 + p_3[2] ** 2.0)  # friction magnitude
+        #     if mu * p_3[1] < fm:
+        #         p_3 = wp.vec3(p_3[0] * mu * p_3[1] / fm, p_3[1], p_3[2] * mu * p_3[1] / fm)\
+
+        p_n = wp.dot(n3, p_3)
+
+        if p_n <= 0.0:
             p_3 = wp.vec3(0.0, 0.0, 0.0)
-        elif p_3[0] != 0.0 or p_3[2] != 0.0:
-            fm = wp.sqrt(p_3[0] ** 2.0 + p_3[2] ** 2.0)  # friction magnitude
-            if mu * p_3[1] < fm:
-                p_3 = wp.vec3(p_3[0] * mu * p_3[1] / fm, p_3[1], p_3[2] * mu * p_3[1] / fm)
+        else:
+            p_tangent = p_3 - p_n * n3  # Tangent component vector
+            p_t = wp.length(p_tangent)  # Tangent magnitude
+
+            if p_t > mu * p_n:  # Outside friction cone
+                p_3 = (mu * p_n / p_t) * p_tangent + p_n * n3 
 
     return p_0, p_1, p_2, p_3
 
@@ -2705,25 +2799,6 @@ def transpose_matrix_batched(
             at_index = a_start_offset + j * rows + i
             A_t[at_index] = A[a_index]
 
-@wp.func
-def compute_contact_frame(n: wp.vec3):
-    """
-    Returns (t1, t2) tangent vectors such that [t1, n, t2] forms orthonormal frame.
-    This makes n align with (0,1,0) in the contact frame.
-    """
-    # Choose perpendicular direction based on which component is smallest
-    if wp.abs(n[0]) < 0.9:
-        # Use cross with x-axis: n × (1,0,0) = (0, nz, -ny)
-        s = wp.sqrt(n[1]*n[1] + n[2]*n[2])  # = sqrt(1 - nx²)
-        t1 = wp.vec3(0.0, n[2]/s, -n[1]/s)
-        t2 = wp.vec3(-s, n[1]*n[0]/s, n[2]*n[0]/s)
-    else:
-        # Use cross with y-axis: n × (0,1,0) = (-nz, 0, nx)
-        s = wp.sqrt(n[2]*n[2] + n[0]*n[0])  # = sqrt(1 - ny²)
-        t1 = wp.vec3(-n[2]/s, 0.0, n[0]/s)
-        t2 = wp.vec3(n[1]*n[0]/s, -s, n[1]*n[2]/s)
-    
-    return t1, t2
 
 ############################# Moreau specific Kernels & Functions  END  #############################
 
@@ -3068,6 +3143,8 @@ class MoreauIntegrator(Integrator):
             # target.body_X_sm = wp.zeros((model.body_count), dtype=wp.transformf, requires_grad=True)
             
             target.point_vec = wp.zeros(model.articulation_count*4, dtype=wp.vec3, requires_grad=True)
+            target.contact_normals = wp.zeros(model.articulation_count*4, dtype=wp.vec3, requires_grad=True)
+            target.contact_normals.fill_(wp.vec3(0.0, 1.0, 0.0))
             target.percussion = wp.zeros((model.articulation_count, 4), dtype=wp.vec3, requires_grad=True)
 
             # compute G and c
@@ -3744,7 +3821,7 @@ class MoreauIntegrator(Integrator):
                 model.shape_geo.thickness, #changed from model.shape_geo,
                 self.col_height,
             ],
-            outputs=[self.Jc, self.c_body_vec, state_mid.point_vec],
+            outputs=[self.Jc, self.c_body_vec, state_mid.point_vec,state_mid.contact_normals],
             device=model.device,
         )
 
@@ -4188,7 +4265,7 @@ class MoreauIntegrator(Integrator):
             wp.launch(
                 kernel=prox_iteration_unrolled,
                 dim=model.articulation_count,
-                inputs=[self.G_mat, state_mid.c_vec, mu, prox_iter],
+                inputs=[self.G_mat, state_mid.c_vec, state_mid.contact_normals, mu, prox_iter],
                 outputs=[state_mid.percussion],
                 device=model.device,
             )
@@ -4196,7 +4273,7 @@ class MoreauIntegrator(Integrator):
             wp.launch(
                 kernel=prox_iteration_unrolled_soft,
                 dim=model.articulation_count,
-                inputs=[state_mid.point_vec, self.G_mat, state_mid.c_vec, mu, prox_iter, self.sigmoid_scale],
+                inputs=[state_mid.point_vec, self.G_mat, state_mid.c_vec, state_mid.contact_normals, mu, prox_iter, self.sigmoid_scale],
                 outputs=[state_mid.percussion],
                 device=model.device,
             )
@@ -4243,7 +4320,8 @@ class MoreauIntegrator(Integrator):
         #new
         state_aug.Inv_M_times_Jc_t.zero_()
         state_aug.Inv_M_times_Jc_t_Transposed.zero_()
-        self.G_mat.zero_() 
+        self.G_mat.zero_()
+        state_aug.contact_normals.fill_(wp.vec3(0.0, 1.0, 0.0))
 
         # Clear the 12 temporary input vectors (split from Jc)
         state_aug.Jc_1.zero_()
@@ -4292,20 +4370,3 @@ class MoreauIntegrator(Integrator):
         state_aug.Jc_qd.zero_()
         state_aug.Jc_times_inv_m_times_h.zero_()
         state_aug.inv_m_times_h.zero_()
-
-        #Additional (Not sure if necessary)
-        # state_aug.tmp_inv_m_times_h.zero_()
-        # state_aug.percussion.zero_()
-
-        ## COPY FROM CLEMENS model.py clear_forces() for reference
-        # if self.particle_count:
-        #     self.particle_f.zero_()
-
-        # if self.body_count:
-        #     self.body_f.zero_()
-
-        # if self.composite_rigid_body_alg:
-        #     self.body_ft_s.zero_()
-        #     self.tmp.zero_()
-        #     self.tmp_inv_m_times_h.zero_()
-        #     self.Jc.zero_()

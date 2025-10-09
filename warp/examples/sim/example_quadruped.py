@@ -172,25 +172,59 @@ class Example:
                 builder.shape_shape_collision[foot_idx] = True   # But not each other
 
         # --------------------- GROUND DEFINITION BEGIN ---------------------
-        # BoxGround
-        box_body_idx = builder.body_count  # This will be 13 if you have 13 articulation bodies
-        builder.add_body(
-            origin=wp.transform(wp.vec3(0.0, -0.25, 0.0), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), math.pi * 0.03)),
-            # You can set mass=0 for static, or leave default
-        )
+        # # BoxGround
+        # box_body_idx = builder.body_count  # This will be 13 if you have 13 articulation bodies
+        # builder.add_body(
+        #     origin=wp.transform(wp.vec3(0.0, -0.25, 0.0), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), math.pi * 0.05)),
+        #     # You can set mass=0 for static, or leave default
+        # )
 
-        # Now attach the box shape to that body
-        ke, kd, kf, mu = 1.0e4, 1.0e2, 1.0e2, 1.0
-        builder.add_shape_box(
-            body=box_body_idx,  # Use the body we just created
-            pos=wp.vec3(0.0, 0.0, 0.0),  # Relative to body origin
-            hx=2.0, hy=0.25, hz=2.0,
-            ke=ke, kd=kd, kf=kf, mu=mu
-        )
+        # # Now attach the box shape to that body
+        # ke, kd, kf, mu = 1.0e4, 1.0e2, 1.0e2, 1.0
+        # builder.add_shape_box(
+        #     body=box_body_idx,  # Use the body we just created
+        #     pos=wp.vec3(0.0, 0.0, 0.0),  # Relative to body origin
+        #     hx=2.0, hy=0.25, hz=2.0,
+        #     ke=ke, kd=kd, kf=kf, mu=mu
+        # )
+
+        # # BoxGround # 2
+        # box_body_idx = builder.body_count  # This will be 13 if you have 13 articulation bodies
+        # builder.add_body(
+        #     origin=wp.transform(wp.vec3(0.0, -0.25, 0.0), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), math.pi * -0.05)),
+        #     # You can set mass=0 for static, or leave default
+        # )
+
+        # # Now attach the box shape to that body
+        # ke, kd, kf, mu = 1.0e4, 1.0e2, 1.0e2, 1.0
+        # builder.add_shape_box(
+        #     body=box_body_idx,  # Use the body we just created
+        #     pos=wp.vec3(0.0, 0.0, 0.0),  # Relative to body origin
+        #     hx=2.0, hy=0.25, hz=2.0,
+        #     ke=ke, kd=kd, kf=kf, mu=mu
+        # )
 
         # print(f"Box body index: {box_body_idx}")
 
-                # # SDFGround
+        # Capsule Ground
+        capsule_body_idx = builder.body_count
+        builder.add_body(
+            origin=wp.transform(wp.vec3(0.0, -4.0, 0.0), wp.quat_identity()),
+        )
+
+        ke, kd, kf, mu = 1.0e4, 1.0e2, 1.0e2, 1.0
+        builder.add_shape_capsule(
+            body=capsule_body_idx,
+            pos=wp.vec3(0.0, 0.0, 0.0),  # Relative to body origin
+            radius=4.0,
+            half_height=20.0,  # Length extends along the axis
+            up_axis=0,  # 0=X-axis (horizontal), 1=Y-axis (vertical), 2=Z-axis
+            ke=ke, kd=kd, kf=kf, mu=mu
+        )
+
+
+        # # SDFGround
+
         # self.rock_path_usd = os.path.join(warp.examples.get_asset_directory(), "rocks.usd")
         # self.rock_path_nvdb = os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb")
         # with open(self.rock_path_nvdb, "rb") as rock_file:
@@ -333,7 +367,7 @@ class Example:
             # self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt, state_mid = self.state_mid)
             self.state_0, self.state_1 = self.state_1, self.state_0
             stopVar = 150 # 720 # 84 # 72
-            # time.sleep(300)
+            # time.sleep(1)
             # if self.integrator._step > stopVar:
             #     time.sleep(0.5)
             # if self.integrator._step > stopVar + 10:
@@ -358,6 +392,53 @@ class Example:
         #     scale=wp.vec3(1.0, 1.0, 1.0),
         #     color=(0.35, 0.55, 0.9),
         # )
+
+        # Visualize contact normals BEGIN
+        contact_normals = self.state_0.contact_normals.numpy()
+        contact_points = self.state_0.point_vec.numpy()
+        c_bodies = self.integrator.c_body_vec.numpy()
+
+        arrow_length = 0.2  # Adjust to taste
+        arrow_radius = 0.01
+
+        for env in range(self.num_envs):
+            for i in range(4):
+                idx = env * 4 + i
+                if c_bodies[idx] >= 0:  # Active contact only
+                    start = contact_points[idx]
+                    normal = contact_normals[idx]
+                    end = start + normal * arrow_length
+                    
+                    # Cylinder position (midpoint)
+                    mid = (start + end) / 2.0
+                    
+                    # Calculate rotation to align cylinder with normal
+                    # Default up_axis=1 means cylinder points along Y
+                    up = np.array([0, 1, 0])
+                    axis = np.cross(up, normal)
+                    axis_len = np.linalg.norm(axis)
+                    
+                    if axis_len > 1e-6:
+                        axis = axis / axis_len
+                        angle = np.arccos(np.clip(np.dot(up, normal), -1.0, 1.0))
+                        # Axis-angle to quaternion (x, y, z, w)
+                        s = np.sin(angle / 2)
+                        rot = (axis[0] * s, axis[1] * s, axis[2] * s, np.cos(angle / 2))
+                    else:
+                        # Normal parallel to Y - identity or 180° flip
+                        rot = (0, 0, 0, 1) if np.dot(up, normal) > 0 else (1, 0, 0, 0)
+                    
+                    self.renderer.render_cylinder(
+                        name=f"normal_{env}_{i}",
+                        pos=tuple(mid),
+                        rot=rot,
+                        radius=arrow_radius,
+                        half_height=arrow_length / 2.0,
+                        color=(1.0, 0.0, 0.0)  # Red
+                    )
+        # Visualize contact normals END
+        
+
         with wp.ScopedTimer("render"):
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render(self.state_0)
