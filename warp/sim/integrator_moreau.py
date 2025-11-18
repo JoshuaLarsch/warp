@@ -1982,19 +1982,25 @@ def construct_contact_jacobian(
         if c_body >= 0 and body_articulation[c_body] == tid:
             # This contact belongs to current articulation
             c_point_local = rigid_contact_point0[contact_idx]
+            c_point_local_2 = rigid_contact_point1[contact_idx] #Added for SDF ISSUE FIX
+            c_body_2 = rigid_contact_body1[contact_idx] #Added for SDF ISSUE FIX
             c_normal = rigid_contact_normal[contact_idx]
-            shape_id = rigid_contact_shape0[contact_idx] 
+            shape_id = rigid_contact_shape0[contact_idx]
+            shape_id_2 = rigid_contact_shape1[contact_idx] #Added for SDF ISSUE FIX
             contact_part_of_articulation = wp.bool(True)
-            wp.printf("Processing  rigid_contact_body0 - as body %d\n", c_body)
+            # wp.printf("Processing  rigid_contact_body0 - as body %d\n", c_body)
         else:
             c_body = rigid_contact_body1[contact_idx]
             if c_body >= 0 and body_articulation[c_body] == tid:
                 # This contact belongs to current articulation
                 c_point_local = rigid_contact_point1[contact_idx]
+                c_point_local_2 = rigid_contact_point0[contact_idx] #Added for SDF ISSUE FIX
+                c_body_2 = rigid_contact_body0[contact_idx] #Added for SDF ISSUE FIX
                 c_normal = -rigid_contact_normal[contact_idx]
                 shape_id = rigid_contact_shape1[contact_idx]
+                shape_id_2 = rigid_contact_shape0[contact_idx] #Added for SDF ISSUE FIX
                 contact_part_of_articulation = wp.bool(True)
-                wp.printf("Processing  rigid_contact_body1 - as body %d\n", c_body)
+                # wp.printf("Processing  rigid_contact_body1 - as body %d\n", c_body)
         
         already_processed = wp.bool(False)
         for slot in range(assigned_contacts):
@@ -2009,16 +2015,55 @@ def construct_contact_jacobian(
             X_s = body_X_sc[c_body]
             p_world = wp.transform_point(X_s, c_point_local)
             p_world = p_world - c_normal * shape_radius
-            contact_distance = wp.dot(c_normal, p_world)
+
+            #Added for SDF ISSUE FIX - BEGIN
+            if c_body_2 >= 0:
+                X_s_2 = body_X_sc[c_body_2]
+                p_world_2 = wp.transform_point(X_s_2, c_point_local_2)
+            else:
+                # Static shape - point is already in world frame
+                p_world_2 = c_point_local_2
+            shape_radius_2 = shape_thickness[shape_id_2]
+            p_world_2 = p_world_2 + c_normal * shape_radius_2
+            p_relative_world = p_world - p_world_2
+            contact_distance = wp.dot(c_normal, p_relative_world)
+            #Added for SDF ISSUE FIX -  END
+
+            # contact_distance = wp.dot(c_normal, p_world)
+            
+
+            
+
+            # wp.printf("[INTEGRATOR] Received contact for body %d:\n", c_body)
+            # wp.printf("  c_point_local: (%.4f, %.4f, %.4f)\n", 
+            #         c_point_local[0], c_point_local[1], c_point_local[2])
+            # wp.printf("  c_normal (world): (%.4f, %.4f, %.4f)\n", 
+            #         c_normal[0], c_normal[1], c_normal[2])
+            # wp.printf("  shape_radius: %.4f\n", shape_radius)
+            
+            # # After transforming to world:
+            # p_world = wp.transform_point(X_s, c_point_local)
+            # wp.printf("  p_world (before offset): (%.4f, %.4f, %.4f)\n",
+            #         p_world[0], p_world[1], p_world[2])
+            
+            # p_world = p_world - c_normal * shape_radius
+            # wp.printf("  p_world (after offset): (%.4f, %.4f, %.4f)\n",
+            #         p_world[0], p_world[1], p_world[2])
+            
+            # contact_distance = wp.dot(c_normal, p_world)
+            # wp.printf("  contact_distance: %.4f, col_height: %.4f\n", contact_distance, col_height)
+
+
+
 
             if contact_distance <= col_height:
                 local_joint_idx = body_to_joint[c_body] - articulation_start[tid]
                 
-                #DEBUG
-                if local_joint_idx < 0:
-                    wp.printf("ERROR: Could not find local body index for body %d\n", c_body)
-                    continue
-                wp.printf("Body %d -> local_joint_idx %d\n", c_body, local_joint_idx)
+                # #DEBUG
+                # if local_joint_idx < 0:
+                #     wp.printf("ERROR: Could not find local body index for body %d\n", c_body)
+                #     continue
+                # wp.printf("Body %d -> local_joint_idx %d\n", c_body, local_joint_idx)
                 
                 # Build contact point skew-symmetric matrix
                 p_skew = wp.skew(p_world)
@@ -2077,9 +2122,9 @@ def construct_contact_jacobian(
         contact_normals[tid * 4 + assigned_contacts] = wp.vec3(0.0, 1.0, 0.0)
         point_vec[tid * 4 + contact_slot] = wp.vec3(0.0)
         
-    #DEBUG
-    wp.printf("Articulation %d: assigned_contacts = %d, total_contacts = %d\n", 
-              tid, assigned_contacts, total_contacts)
+    # #DEBUG
+    # wp.printf("Articulation %d: assigned_contacts = %d, total_contacts = %d\n", 
+    #           tid, assigned_contacts, total_contacts)
 
 @wp.func
 def dense_J_index(J_start: wp.array(dtype=int), dim_count: int, dof_count: int, tid: int, i: int, j: int, k: int):
@@ -2351,9 +2396,9 @@ def prox_loop(
 
         r = 1.0 / (STABILITY_ADDITION + r_sum)  # +1 for stability 
 
-        #DEBUG
-        if tid == 0 and it == 0:
-            wp.printf("Contact 0: r_sum=%.6f, r=%.6f\n", r_sum, r)
+        # #DEBUG
+        # if tid == 0 and it == 0:
+        #     wp.printf("Contact 0: r_sum=%.6f, r=%.6f\n", r_sum, r)
 
         # update percussion
         p_0 = p_0 - r * (sum + c_vec_0)
@@ -2732,53 +2777,6 @@ def map_shape_contacts_to_body_contacts(
     contact_body0[i] = shape_body[contact_shape0[i]]
     contact_body1[i] = shape_body[contact_shape1[i]]
 
-@wp.kernel
-def debug_check_j_matrix(
-    J: wp.array(dtype=float),
-    J_start: wp.array(dtype=int),
-    articulation_count: int
-):
-    # Check first articulation's J matrix
-    start_idx = J_start[0]
-    wp.printf("J matrix check: J[%d]=%f, J[%d]=%f, J[%d]=%f\n", 
-              start_idx, J[start_idx], 
-              start_idx+1, J[start_idx+1],
-              start_idx+2, J[start_idx+2])
-
-@wp.kernel  
-def debug_g_computation(Jc: wp.array(dtype=float), G_mat: wp.array3d(dtype=wp.mat33)):
-    wp.printf("First Jc values: %f %f %f\n", Jc[0], Jc[1], Jc[2])
-    G_val = G_mat[0, 0, 0][0, 0]  # First G matrix element
-    wp.printf("First G value: %f\n", G_val)
-
-# Add this new kernel to your file
-@wp.kernel
-def debug_create_matrix_io(
-    # Pass the same inputs as the real create_matrix kernel
-    dof_count: int,
-    A_start: wp.array(dtype=int),
-    a_start: wp.array(dtype=int),
-    a_7: wp.array(dtype=float), # We'll just check the 7th vector
-    A: wp.array(dtype=float)
-):
-    tid = wp.tid() # Articulation index
-    
-    # Offsets for this articulation
-    a_start_offset = a_start[tid]
-    A_start_offset = A_start[tid]
-
-    # Let's check the first element of the 7th input vector
-    input_val = a_7[a_start_offset + 0]
-    
-    # This is the memory location where the 7th row and 1st column should be written
-    # 6 rows * dof_count columns per row
-    output_addr = A_start_offset + 6 * dof_count + 0 
-    
-    if True:
-        wp.printf("--- Create_Matrix Debug ---\n")
-        wp.printf("Input a_7[0]: %f\n", input_val)
-        wp.printf("Intended write address for A[row 6, col 0]: %d\n", output_addr)
-        wp.printf("tid: %f\n", tid)
 
 @wp.kernel
 def transpose_matrix_batched(
@@ -3024,9 +3022,9 @@ class MoreauIntegrator(Integrator):
 
             self.body_articulation = wp.array(body_articulation, dtype=wp.int32, device=model.device)
 
-            # DEBUG checking how  self.body_articulatio handles non articulation bodies
-            print(f"body_articulation : {body_articulation}\n")
-            print(f"model.shape_body.numpy() : {model.shape_body.numpy()}\n")
+            # # DEBUG checking how  self.body_articulatio handles non articulation bodies
+            # print(f"body_articulation : {body_articulation}\n")
+            # print(f"model.shape_body.numpy() : {model.shape_body.numpy()}\n")
 
             # Moreau specific additions
             self.articulation_Jc_rows = wp.array(articulation_Jc_rows, dtype=wp.int32)
@@ -3546,7 +3544,7 @@ class MoreauIntegrator(Integrator):
             # Temporary additional MOREAU Clearing
             self.Jc.zero_()
 
-            print(f"------------------------------ Iteration {self._step} Complete ------------------------------")
+            # print(f"------------------------------ Iteration {self._step} Complete ------------------------------")
 
             self._step += 1
 
@@ -4089,59 +4087,59 @@ class MoreauIntegrator(Integrator):
         )
 
         #DEBUG
-        wp.synchronize()
+        # wp.synchronize()
 
-        import numpy as np
-        np.set_printoptions(precision=4, suppress=True, linewidth=200)
+        # import numpy as np
+        # np.set_printoptions(precision=4, suppress=True, linewidth=200)
 
-        c_bodies = self.c_body_vec.numpy()
-        num_contacts = np.count_nonzero(c_bodies[:4] != -1)
+        # c_bodies = self.c_body_vec.numpy()
+        # num_contacts = np.count_nonzero(c_bodies[:4] != -1)
 
 
-        if num_contacts >= 2:
-            print("\n" + "="*20 + " DIRECT G-MATRIX HEALTH CHECK " + "="*20)
-            print(f"Checking G matrix immediately after computation for {num_contacts} active contacts...")
+        # if num_contacts >= 2:
+        #     print("\n" + "="*20 + " DIRECT G-MATRIX HEALTH CHECK " + "="*20)
+        #     print(f"Checking G matrix immediately after computation for {num_contacts} active contacts...")
             
-            # Fetch the raw, flat G array from the GPU
-            G_full_flat = self.G.numpy()
+        #     # Fetch the raw, flat G array from the GPU
+        #     G_full_flat = self.G.numpy()
             
-            try:
-                max_contact_dims = 4 * 3  # Always 12
-                G_full = G_full_flat[:max_contact_dims * max_contact_dims].reshape((max_contact_dims, max_contact_dims))
+        #     try:
+        #         max_contact_dims = 4 * 3  # Always 12
+        #         G_full = G_full_flat[:max_contact_dims * max_contact_dims].reshape((max_contact_dims, max_contact_dims))
                 
-                # Now extract the active block (top-left corner)
-                g_dim = num_contacts * 3
-                G = G_full[:g_dim, :g_dim]
+        #         # Now extract the active block (top-left corner)
+        #         g_dim = num_contacts * 3
+        #         G = G_full[:g_dim, :g_dim]
                 
-                # print("Raw G Matrix (active part):\n", G)
+        #         # print("Raw G Matrix (active part):\n", G)
                 
-                print("\n--- Checking G-Matrix Symmetry...")
-                is_symmetric = np.allclose(G, G.T, atol=1e-5)
-                if is_symmetric:
-                    print("Symmetry Check PASSED!")
-                else:
-                    print("SYMMETRY CHECK FAILED! The matmul_batched kernel is producing a non-symmetric result.")
-                    # print("   Difference (G - G.T):\n", G - G.T)
+        #         print("\n--- Checking G-Matrix Symmetry...")
+        #         is_symmetric = np.allclose(G, G.T, atol=1e-5)
+        #         if is_symmetric:
+        #             print("Symmetry Check PASSED!")
+        #         else:
+        #             print("SYMMETRY CHECK FAILED! The matmul_batched kernel is producing a non-symmetric result.")
+        #             # print("   Difference (G - G.T):\n", G - G.T)
                 
-                print("\n--- Checking G-Matrix Eigenvalues...")
-                try:
-                    eigenvalues = np.linalg.eigvals(G)
-                    negative_eigenvalues = eigenvalues[eigenvalues < -1e-6]
+        #         print("\n--- Checking G-Matrix Eigenvalues...")
+        #         try:
+        #             eigenvalues = np.linalg.eigvals(G)
+        #             negative_eigenvalues = eigenvalues[eigenvalues < -1e-6]
                     
-                    if len(negative_eigenvalues) == 0:
-                        print("Positive Semi-Definite Check PASSED!")
-                        print("   (Smallest eigenvalue:", np.min(eigenvalues), ")")
-                    else:
-                        print("POSITIVE SEMI-DEFINITE CHECK FAILED! matmul_batched is producing an invalid matrix.")
-                        print("   Found Negative Eigenvalues:", negative_eigenvalues)
-                        exit()
-                except np.linalg.LinAlgError:
-                    print("   Could not compute eigenvalues. Matrix is invalid.")
+        #             if len(negative_eigenvalues) == 0:
+        #                 print("Positive Semi-Definite Check PASSED!")
+        #                 print("   (Smallest eigenvalue:", np.min(eigenvalues), ")")
+        #             else:
+        #                 print("POSITIVE SEMI-DEFINITE CHECK FAILED! matmul_batched is producing an invalid matrix.")
+        #                 print("   Found Negative Eigenvalues:", negative_eigenvalues)
+        #                 exit()
+        #         except np.linalg.LinAlgError:
+        #             print("   Could not compute eigenvalues. Matrix is invalid.")
             
-            except ValueError as e:
-                print(f"Error reshaping G matrix. Is G_full_flat the right size? Error: {e}")
+        #     except ValueError as e:
+        #         print(f"Error reshaping G matrix. Is G_full_flat the right size? Error: {e}")
             
-            print("="*60 + "\n")
+        #     print("="*60 + "\n")
 
         # convert G to matrix
         # kernel 13
@@ -4236,28 +4234,28 @@ class MoreauIntegrator(Integrator):
 
     def eval_contact_forces(self, model, state_mid, dt, mu, prox_iter, mode):
 
-        # --- BEGIN DEBUG PRINTS ---
-        wp.synchronize() # Ensure all previous kernels are finished
+        # # --- BEGIN DEBUG PRINTS ---
+        # wp.synchronize() # Ensure all previous kernels are finished
 
-        print(f"\n--- DEBUG DATA for Iteration {self._step} ---")
+        # print(f"\n--- DEBUG DATA for Iteration {self._step} ---")
 
-        # Inspect the c_vec input
-        c_vec_numpy = state_mid.c_vec.numpy()
-        c_vec_art0 = c_vec_numpy[0]
-        is_c_vec_zero = not c_vec_art0.any()
-        print(f"Is c_vec input zero for articulation 0? {is_c_vec_zero}")
-        if not is_c_vec_zero:
-            print("c_vec[0] NON-ZERO values:")
-            print(c_vec_art0)
+        # # Inspect the c_vec input
+        # c_vec_numpy = state_mid.c_vec.numpy()
+        # c_vec_art0 = c_vec_numpy[0]
+        # is_c_vec_zero = not c_vec_art0.any()
+        # print(f"Is c_vec input zero for articulation 0? {is_c_vec_zero}")
+        # if not is_c_vec_zero:
+        #     print("c_vec[0] NON-ZERO values:")
+        #     print(c_vec_art0)
 
-        # Inspect the G_mat input (optional, we expect it to be zero)
-        G_mat_numpy = self.G_mat.numpy()
-        G_mat_art0 = G_mat_numpy[0]
-        is_G_mat_zero = not G_mat_art0.any()
-        print(f"Is G_mat input zero for articulation 0? {is_G_mat_zero}")
+        # # Inspect the G_mat input (expect it to be zero)
+        # G_mat_numpy = self.G_mat.numpy()
+        # G_mat_art0 = G_mat_numpy[0]
+        # is_G_mat_zero = not G_mat_art0.any()
+        # print(f"Is G_mat input zero for articulation 0? {is_G_mat_zero}")
 
-        print(f"--- END DEBUG DATA ---\n")
-        # # --- END DEBUG PRINTS ---
+        # print(f"--- END DEBUG DATA ---\n")
+        # # # --- END DEBUG PRINTS ---
 
         # prox iteration
         # kernel 7
@@ -4280,22 +4278,22 @@ class MoreauIntegrator(Integrator):
         else:
             raise ValueError("Invalid mode")
         import numpy as np
-        # DEBUG: Check for divergence
-        wp.synchronize()
-        percussion_np = state_mid.percussion.numpy()
-        max_percussion = np.max(np.abs(percussion_np))
-        percussion_norms = np.linalg.norm(percussion_np, axis=1)
+        # # DEBUG: Check for divergence
+        # wp.synchronize()
+        # percussion_np = state_mid.percussion.numpy()
+        # max_percussion = np.max(np.abs(percussion_np))
+        # percussion_norms = np.linalg.norm(percussion_np, axis=1)
         
-        if max_percussion > 20.0:
-            print(f"\n{'='*20} PERCUSSION DIVERGENCE DETECTED {'='*20}")
-            print(f"Max percussion component: {max_percussion:.4f}")
-            print(f"Percussion norms: {percussion_norms}")
-            print(f"Full percussion array:\n{percussion_np}")
-            print(f"Iteration: {self._step}")
-            exit()
+        # if max_percussion > 20.0:
+        #     print(f"\n{'='*20} PERCUSSION DIVERGENCE DETECTED {'='*20}")
+        #     print(f"Max percussion component: {max_percussion:.4f}")
+        #     print(f"Percussion norms: {percussion_norms}")
+        #     print(f"Full percussion array:\n{percussion_np}")
+        #     print(f"Iteration: {self._step}")
+        #     # exit()
 
-        # DEBUG
-        print("Contact impulses:", state_mid.percussion.numpy())
+        # # DEBUG
+        # print("Contact impulses:", state_mid.percussion.numpy())
 
         # kernel 6
         wp.launch(
@@ -4305,14 +4303,9 @@ class MoreauIntegrator(Integrator):
             outputs=[state_mid.body_f_s],
             device=model.device,
         )
-        # DEBUG
-        # print("Contact forces:", state_mid.body_f_s.numpy())
 
     def clear_moreau_vars(self, state_aug):
         """Clear Moreau-specific variables before contact resolution"""
-        # CRITICAL: body_f_s uses atomic_add in p_to_f_s
-        # state_aug.body_f_s.zero_() # # 69420
-        
         # Contact matrices (for safety with variable contact counts)
         self.Jc.zero_()
         self.G.zero_() 

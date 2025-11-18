@@ -34,6 +34,7 @@ import warp.sim.render
 import time
 
 
+
 # Taken from env/environment.py
 def compute_env_offsets(num_envs, env_offset=(5.0, 0.0, 5.0), up_axis="Y"):
     # compute positional offsets per environment
@@ -118,7 +119,7 @@ class Example:
         # stage_path = "test_flapper_fixed.usd"
         # tage_path = "test_pendulum.usd"
         # stage_path = "quadruped_damped.usd"
-        # stage_path = "test_3leg.usd"
+        #stage_path = "test_3leg.usd"
         
 
         
@@ -148,7 +149,7 @@ class Example:
             builder.joint_axis_mode = [wp.sim.JOINT_MODE_TARGET_POSITION] * len(builder.joint_axis_mode)
             builder.joint_act[-12:] = [0.2, 0.4, -0.6, -0.2, -0.4, 0.6, -0.2, 0.4, -0.6, 0.2, -0.4, 0.6]
 
-        FilterFootContacts = True
+        FilterFootContacts = False
         if FilterFootContacts:
             foot_shape_names = ["LF_SHANK", "RF_SHANK", "LH_SHANK", "RH_SHANK"]
             foot_shape_indices = []
@@ -206,41 +207,99 @@ class Example:
 
         # print(f"Box body index: {box_body_idx}")
 
-        # Capsule Ground
-        capsule_body_idx = builder.body_count
-        builder.add_body(
-            origin=wp.transform(wp.vec3(0.0, -4.0, 0.0), wp.quat_identity()),
+        # # Capsule Ground
+        # capsule_body_idx = builder.body_count
+        # builder.add_body(
+        #     origin=wp.transform(wp.vec3(0.0, -2.0, 0.0), wp.quat_identity()),
+        # )
+
+        # ke, kd, kf, mu = 1.0e4, 1.0e2, 1.0e2, 1.0
+        # builder.add_shape_capsule(
+        #     body=capsule_body_idx,
+        #     pos=wp.vec3(0.0, 0.0, 0.0),  # Relative to body origin
+        #     radius=2.0,
+        #     half_height=20.0,  # Length extends along the axis
+        #     up_axis=0,  # 0=X-axis (horizontal), 1=Y-axis (vertical), 2=Z-axis
+        #     ke=ke, kd=kd, kf=kf, mu=mu
+        # )
+
+        # # SphereGround
+        # sphere_body_idx = builder.body_count
+        # builder.add_body(
+        #     origin=wp.transform(wp.vec3(0.0, -3.0, 0.0), wp.quat_identity()),
+        #     # You can set mass=0 for static, or leave default
+        # )
+
+        # # Now attach the sphere shape to that body
+        # ke, kd, kf, mu = 1.0e4, 1.0e2, 1.0e2, 1.0
+        # builder.add_shape_sphere(
+        #     body=sphere_body_idx,  # Use the body we just created
+        #     pos=wp.vec3(0.0, 0.0, 0.0),  # Relative to body origin
+        #     radius=3.0,
+        #     ke=ke, kd=kd, kf=kf, mu=mu
+        # )
+
+        # print(f"Sphere body index: {sphere_body_idx}")
+
+        # SDFGround ROCK
+
+        self.rock_path_usd = os.path.join(warp.examples.get_asset_directory(), "rocks.usd")
+        self.rock_path_nvdb = os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb")
+        with open(self.rock_path_nvdb, "rb") as rock_file:
+            rock_vdb = wp.Volume.load_from_nvdb(rock_file.read())
+
+        rock_sdf = wp.sim.SDF(rock_vdb)
+
+        builder.add_shape_sdf(
+            ke=1.0e4,
+            kd=1000.0,
+            kf=1000.0,
+            mu=0.5,
+            sdf=rock_sdf,
+            body=-1,
+            pos=wp.vec3(1.0, -10.5, 0.5),
+            # pos=wp.vec3(-0.5, -11, -0.5),
+            rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+            scale=wp.vec3(1.0, 1.0, 1.0),
         )
 
-        ke, kd, kf, mu = 1.0e4, 1.0e2, 1.0e2, 1.0
-        builder.add_shape_capsule(
-            body=capsule_body_idx,
-            pos=wp.vec3(0.0, 0.0, 0.0),  # Relative to body origin
-            radius=4.0,
-            half_height=20.0,  # Length extends along the axis
-            up_axis=0,  # 0=X-axis (horizontal), 1=Y-axis (vertical), 2=Z-axis
-            ke=ke, kd=kd, kf=kf, mu=mu
-        )
+        # SDFGround Terrain w/ usd and ncdb files
 
+        # self.terrain_path_usd = os.path.join(warp.examples.get_asset_directory(), "testTerrain0.usd")
+        # terrain_path_nvdb = os.path.join(warp.examples.get_asset_directory(), "testTerrain0.nvdb")
+        # with open(terrain_path_nvdb, "rb") as terrain_file:
+        #     terrain_vdb = wp.Volume.load_from_nvdb(terrain_file.read())
 
-        # # SDFGround
+        # terrain_sdf = wp.sim.SDF(terrain_vdb)
 
-        # self.rock_path_usd = os.path.join(warp.examples.get_asset_directory(), "rocks.usd")
-        # self.rock_path_nvdb = os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb")
-        # with open(self.rock_path_nvdb, "rb") as rock_file:
-        #     rock_vdb = wp.Volume.load_from_nvdb(rock_file.read())
+        # SDFGround Terrain w/generate_terrain.py
+          
+        # Use for collision
+        # volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
+        #     noise_height=0.1,
+        #     noise_period=2.0,
+        #     noise_type="perlin"
+        # )
 
-        # rock_sdf = wp.sim.SDF(rock_vdb)
+        # volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
+        #     primitive_count=15,     # Number of random boxes
+        #     primitive_size=2.0,     # Max edge length
+        #     primitive_height=0.3,   # Max top height
+        #     softmin_k=50.0,        # For future smoothing
+        #     seed = 44,
+        # )
+        # terrain_sdf = wp.sim.SDF(volume)
 
         # builder.add_shape_sdf(
         #     ke=1.0e4,
         #     kd=1000.0,
         #     kf=1000.0,
         #     mu=0.5,
-        #     sdf=rock_sdf,
+        #     sdf=terrain_sdf,
         #     body=-1,
-        #     pos=wp.vec3(1.0, -10, 0.5),
+        #     pos=wp.vec3(0.0, 0.0, 0.0),
         #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+        #     # rot=wp.quat_identity(),
         #     scale=wp.vec3(1.0, 1.0, 1.0),
         # )
 
@@ -339,16 +398,17 @@ class Example:
         else:
             self.renderer = None
 
-        self.state_0 = self.model.state(requires_grad=True)
-        self.state_1 = self.model.state(requires_grad=True)
+        self.state_0 = self.model.state(requires_grad=True)  
+        self.state_1 = self.model.state(requires_grad=True)  
         self.state_mid = self.model.state(requires_grad=True)
 
         wp.sim.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, None, self.state_0)
 
         # simulate() allocates memory via a clone, so we can't use graph capture if the device does not support mempools
         # self.use_cuda_graph = wp.get_device().is_cuda and wp.is_mempool_enabled(wp.get_device())    
-        print("Graph Capture temporarily disabled for debugging")
-        self.use_cuda_graph = False
+        self.use_cuda_graph = True
+        if not self.use_cuda_graph:
+            print("Graph Capture temporarily disabled for debugging")
 
         if self.use_cuda_graph:
             with wp.ScopedCapture() as capture:
@@ -366,7 +426,7 @@ class Example:
             self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
             # self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt, state_mid = self.state_mid)
             self.state_0, self.state_1 = self.state_1, self.state_0
-            stopVar = 150 # 720 # 84 # 72
+            stopVar = 15 # 720 # 84 # 72
             # time.sleep(1)
             # if self.integrator._step > stopVar:
             #     time.sleep(0.5)
@@ -384,13 +444,31 @@ class Example:
     def render(self):
         if self.renderer is None:
             return
+        self.renderer.render_ref(
+            name="collision",
+            path=self.rock_path_usd,
+            pos=wp.vec3(1.0, -10.5, 0.5),
+            #pos=wp.vec3(-0.5, -11, -0.5),
+            rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+            scale=wp.vec3(1.0, 1.0, 1.0),
+            color=(0.35, 0.55, 0.9),
+        )
         # self.renderer.render_ref(
-        #     name="collision",
-        #     path=self.rock_path_usd,
-        #     pos=wp.vec3(1.0, -10, 0.5),
+        #     name="terrain",
+        #     path=self.terrain_path_usd,
+        #     pos=wp.vec3(0.0, 0.0, 0.0),
         #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
         #     scale=wp.vec3(1.0, 1.0, 1.0),
-        #     color=(0.35, 0.55, 0.9),
+        #     # color=(0.5, 0.4, 0.3),  # Brown-ish terrain color
+        #     color=(0.35, 0.55, 0.9),  
+        # )
+        # self.renderer.render_mesh(
+        #     name="terrain",
+        #     points=self.terrain_vertices,
+        #     indices=self.terrain_indices,
+        #     pos=wp.vec3(0.0, 0.0, 0.0),
+        #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+        #     colors=(0.5, 0.4, 0.3),
         # )
 
         # Visualize contact normals BEGIN

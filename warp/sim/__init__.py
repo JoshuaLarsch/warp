@@ -26,6 +26,7 @@ from .integrator import Integrator, integrate_bodies, integrate_particles
 from .integrator_euler import SemiImplicitIntegrator
 from .integrator_featherstone import FeatherstoneIntegrator
 from .integrator_moreau import MoreauIntegrator
+from .generate_terrain import generate_terrain
 from .integrator_vbd import VBDIntegrator
 from .integrator_xpbd import XPBDIntegrator
 from .model import (
