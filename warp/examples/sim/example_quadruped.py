@@ -135,7 +135,7 @@ class Example:
         fps = 100 # lowered to test instability CHANGED from 100
         self.frame_dt = 1.0 / fps
 
-        self.sim_substeps = 10 # CHANGED from 10
+        self.sim_substeps = 50 # CHANGED from 10
         self.sim_dt = self.frame_dt / self.sim_substeps
 
         self.num_envs = num_envs
@@ -243,25 +243,25 @@ class Example:
 
         # SDFGround ROCK
 
-        self.rock_path_usd = os.path.join(warp.examples.get_asset_directory(), "rocks.usd")
-        self.rock_path_nvdb = os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb")
-        with open(self.rock_path_nvdb, "rb") as rock_file:
-            rock_vdb = wp.Volume.load_from_nvdb(rock_file.read())
+        # self.rock_path_usd = os.path.join(warp.examples.get_asset_directory(), "rocks.usd")
+        # self.rock_path_nvdb = os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb")
+        # with open(self.rock_path_nvdb, "rb") as rock_file:
+        #     rock_vdb = wp.Volume.load_from_nvdb(rock_file.read())
 
-        rock_sdf = wp.sim.SDF(rock_vdb)
+        # rock_sdf = wp.sim.SDF(rock_vdb)
 
-        builder.add_shape_sdf(
-            ke=1.0e4,
-            kd=1000.0,
-            kf=1000.0,
-            mu=0.5,
-            sdf=rock_sdf,
-            body=-1,
-            pos=wp.vec3(1.0, -10.5, 0.5),
-            # pos=wp.vec3(-0.5, -11, -0.5),
-            rot=wp.quat(0.0, 0.0, 0.0, 1.0),
-            scale=wp.vec3(1.0, 1.0, 1.0),
-        )
+        # builder.add_shape_sdf(
+        #     ke=1.0e4,
+        #     kd=1000.0,
+        #     kf=1000.0,
+        #     mu=0.5,
+        #     sdf=rock_sdf,
+        #     body=-1,
+        #     pos=wp.vec3(1.0, -10.5, 0.5),
+        #     # pos=wp.vec3(-0.5, -11, -0.5),
+        #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+        #     scale=wp.vec3(1.0, 1.0, 1.0),
+        # )
 
         # SDFGround Terrain w/ usd and ncdb files
 
@@ -357,7 +357,7 @@ class Example:
         np.set_printoptions(suppress=True)
         # finalize model
         self.model = builder.finalize()
-        self.model.ground = False 
+        self.model.ground = True 
 
 
 
@@ -378,7 +378,7 @@ class Example:
 
         self.model.joint_attach_ke = 16000.0
         self.model.joint_attach_kd = 200.0
-        self.use_tile_gemm = True
+        self.use_tile_gemm = False
         self.fuse_cholesky = self.use_tile_gemm
 
         # self.integrator = wp.sim.XPBDIntegrator()
@@ -444,15 +444,15 @@ class Example:
     def render(self):
         if self.renderer is None:
             return
-        self.renderer.render_ref(
-            name="collision",
-            path=self.rock_path_usd,
-            pos=wp.vec3(1.0, -10.5, 0.5),
-            #pos=wp.vec3(-0.5, -11, -0.5),
-            rot=wp.quat(0.0, 0.0, 0.0, 1.0),
-            scale=wp.vec3(1.0, 1.0, 1.0),
-            color=(0.35, 0.55, 0.9),
-        )
+        # self.renderer.render_ref(
+        #     name="collision",
+        #     path=self.rock_path_usd,
+        #     pos=wp.vec3(1.0, -10.5, 0.5),
+        #     #pos=wp.vec3(-0.5, -11, -0.5),
+        #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+        #     scale=wp.vec3(1.0, 1.0, 1.0),
+        #     color=(0.35, 0.55, 0.9),
+        # )
         # self.renderer.render_ref(
         #     name="terrain",
         #     path=self.terrain_path_usd,
@@ -535,7 +535,7 @@ if __name__ == "__main__":
         help="Path to the output USD file.",
     )
     parser.add_argument("--num_frames", type=int, default=300, help="Total number of frames.")
-    parser.add_argument("--num_envs", type=int, default=1, help="Total number of simulated environments.")
+    parser.add_argument("--num_envs", type=int, default=2, help="Total number of simulated environments.")
 
     args = parser.parse_known_args()[0]
 
