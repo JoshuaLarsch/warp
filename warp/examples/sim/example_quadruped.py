@@ -93,10 +93,13 @@ class Example:
             # os.path.join(warp.examples.get_asset_directory(), "test_pendulum.urdf"),
             # os.path.join(warp.examples.get_asset_directory(), "quadruped_damped.urdf"),
             # os.path.join(warp.examples.get_asset_directory(), "test_3leg.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_capsule_on_cube.urdf"),
+            # os.path.join(warp.examples.get_asset_directory(), "test_snowman.urdf"),
             articulation_builder,
             # xform=wp.transform([0.0, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)), # CHANGED TO HAVE CONTACT MUCH EARLIER
             # xform=wp.transform([0.0, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)),
-            xform=wp.transform([0.0, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.48)),
+            xform=wp.transform([0.6, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.48)),
+            # xform=wp.transform([0.0, 0.7, 0.0], wp.quat_from_axis_angle(wp.vec3(0.0, 1.0, 0.0), math.pi*0.0)),
             floating=True,
             density=1000,
             armature=0.01,
@@ -112,14 +115,16 @@ class Example:
         # stage_path = "quadruped_fixed.usd"
         # stage_path = "test_cube.usd"
         # stage_path = "test_dumbbell.usd"
-        # stage_path = "test_sphere.usd"
+        # tage_path = "test_sphere.usd"
         # stage_path = "test_tetrahedral.usd"
         # stage_path = "test_corner_cube.usd"
         # stage_path = "test_flapper.usd"
         # stage_path = "test_flapper_fixed.usd"
         # tage_path = "test_pendulum.usd"
         # stage_path = "quadruped_damped.usd"
-        #stage_path = "test_3leg.usd"
+        # stage_path = "test_3leg.usd"
+        # stage_path = "test_capsule_on_cube.usd"
+        # stage_path = "test_snowman.usd"
         
 
         
@@ -135,7 +140,7 @@ class Example:
         fps = 100 # lowered to test instability CHANGED from 100
         self.frame_dt = 1.0 / fps
 
-        self.sim_substeps = 50 # CHANGED from 10
+        self.sim_substeps = 1 # CHANGED from 10
         self.sim_dt = self.frame_dt / self.sim_substeps
 
         self.num_envs = num_envs
@@ -275,33 +280,33 @@ class Example:
         # SDFGround Terrain w/generate_terrain.py
           
         # Use for collision
-        # volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
-        #     noise_height=0.1,
-        #     noise_period=2.0,
-        #     noise_type="perlin"
-        # )
+        volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
+            noise_height=0.1,
+            noise_period=2.0,
+            noise_type="perlin"
+        )
 
-        # volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
-        #     primitive_count=15,     # Number of random boxes
-        #     primitive_size=2.0,     # Max edge length
-        #     primitive_height=0.3,   # Max top height
-        #     softmin_k=50.0,        # For future smoothing
-        #     seed = 44,
-        # )
-        # terrain_sdf = wp.sim.SDF(volume)
+        volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
+            primitive_count=15,     # Number of random boxes
+            primitive_size=2.0,     # Max edge length
+            primitive_height=0.3,   # Max top height
+            softmin_k=50.0,        # For future smoothing
+            seed = 44,
+        )
+        terrain_sdf = wp.sim.SDF(volume)
 
-        # builder.add_shape_sdf(
-        #     ke=1.0e4,
-        #     kd=1000.0,
-        #     kf=1000.0,
-        #     mu=0.5,
-        #     sdf=terrain_sdf,
-        #     body=-1,
-        #     pos=wp.vec3(0.0, 0.0, 0.0),
-        #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
-        #     # rot=wp.quat_identity(),
-        #     scale=wp.vec3(1.0, 1.0, 1.0),
-        # )
+        builder.add_shape_sdf(
+            ke=1.0e4,
+            kd=1000.0,
+            kf=1000.0,
+            mu=0.5,
+            sdf=terrain_sdf,
+            body=-1,
+            pos=wp.vec3(0.0, 0.0, 0.0),
+            rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+            # rot=wp.quat_identity(),
+            scale=wp.vec3(1.0, 1.0, 1.0),
+        )
 
         # #MeshGround
         # vertices = np.array([
@@ -406,7 +411,7 @@ class Example:
 
         # simulate() allocates memory via a clone, so we can't use graph capture if the device does not support mempools
         # self.use_cuda_graph = wp.get_device().is_cuda and wp.is_mempool_enabled(wp.get_device())    
-        self.use_cuda_graph = True
+        self.use_cuda_graph = False
         if not self.use_cuda_graph:
             print("Graph Capture temporarily disabled for debugging")
 
@@ -423,11 +428,12 @@ class Example:
             wp.sim.collide(self.model, self.state_0)
 
 
-            self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
+            #self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
+            self.integrator.simulate(self.model, self.state_0, self.state_mid, self.state_1, self.sim_dt)
             # self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt, state_mid = self.state_mid)
             self.state_0, self.state_1 = self.state_1, self.state_0
-            stopVar = 15 # 720 # 84 # 72
-            # time.sleep(1)
+            # stopVar = 15 # 720 # 84 # 72
+            # #time.sleep(1)
             # if self.integrator._step > stopVar:
             #     time.sleep(0.5)
             # if self.integrator._step > stopVar + 10:
@@ -472,8 +478,8 @@ class Example:
         # )
 
         # Visualize contact normals BEGIN
-        contact_normals = self.state_0.contact_normals.numpy()
-        contact_points = self.state_0.point_vec.numpy()
+        contact_normals = self.state_mid.contact_normals.numpy()
+        contact_points = self.state_mid.point_vec.numpy()
         c_bodies = self.integrator.c_body_vec.numpy()
 
         arrow_length = 0.2  # Adjust to taste
@@ -535,7 +541,7 @@ if __name__ == "__main__":
         help="Path to the output USD file.",
     )
     parser.add_argument("--num_frames", type=int, default=300, help="Total number of frames.")
-    parser.add_argument("--num_envs", type=int, default=2, help="Total number of simulated environments.")
+    parser.add_argument("--num_envs", type=int, default=1, help="Total number of simulated environments.")
 
     args = parser.parse_known_args()[0]
 

@@ -14,6 +14,8 @@ import torch
 import warp as wp
 from .model import ModelShapeGeometry, ModelShapeMaterials
 
+DEBUG_STEP_COUNTER = [0]
+
 
 @wp.func
 def offset_sigmoid(x: float, scale: float, offset: float):
@@ -1919,6 +1921,47 @@ class MoreauIntegrator:
             outputs=[state_out.body_q, state_out.body_qd],
         )
 
+        # ============== DEBUG: Step-by-step state comparison ==============
+        DEBUG_STEP_COUNTER[0] += 1
+        if DEBUG_STEP_COUNTER[0] <= 5:
+            wp.synchronize_device()
+            import numpy as np
+            
+            step = DEBUG_STEP_COUNTER[0]
+            
+            # Input state
+            q_in = state_in.joint_q.numpy()
+            qd_in = state_in.joint_qd.numpy()
+            
+            # Output state
+            q_out = state_out.joint_q.numpy()
+            qd_out = state_out.joint_qd.numpy()
+            
+            # Key intermediate quantities
+            tau = state_mid.joint_tau.numpy()
+            qdd = state_mid.joint_qdd.numpy()
+            
+            # Contact info
+            perc = state_mid.percussion.numpy()
+            perc_norm = np.linalg.norm(perc)
+            
+            print(f"\n[CLE] ===== STEP {step} SUMMARY =====")
+            print(f"[CLE] q_in[:6]:  {q_in[:6]}")
+            print(f"[CLE] qd_in[:6]: {qd_in[:6]}")
+            print(f"[CLE] tau[:6]:   {tau[:6]}")
+            print(f"[CLE] qdd[:6]:   {qdd[:6]}")
+            print(f"[CLE] q_out[:6]: {q_out[:6]}")
+            print(f"[CLE] qd_out[:6]:{qd_out[:6]}")
+            print(f"[CLE] percussion norm: {perc_norm:.6f}")
+            print(f"[CLE] percussion[0]: {perc[0]}")
+            
+            # Energy check (kinetic energy should be roughly conserved without contacts/gravity)
+            # KE = 0.5 * qd^T * H * qd (approximation: just qd norm)
+            ke_in = 0.5 * np.sum(qd_in**2)
+            ke_out = 0.5 * np.sum(qd_out**2)
+            print(f"[CLE] KE (approx): in={ke_in:.6f}, out={ke_out:.6f}, delta={ke_out-ke_in:.6f}")
+        # ===========================================================
+
         return state_out
 
     def eval_mass_matrix(self, model, state_mid):
@@ -1938,6 +1981,31 @@ class MoreauIntegrator:
             outputs=[model.J],
             device=model.device,
         )
+
+        # Add this after eval_rigid_jacobian in BOTH integrators:
+        if DEBUG_STEP_COUNTER[0] < 1:
+            wp.synchronize_device()
+            import numpy as np
+            
+            num_bodies = 13
+            num_dofs = 18
+            
+            # Get J as a matrix
+            J_flat = self.J.numpy() if hasattr(self, 'J') else model.J.numpy()  # adapt for each
+            J_np = J_flat[:num_bodies*6*num_dofs].reshape(num_bodies*6, num_dofs)
+            
+            print(f"\n[CLE] ===== FULL J MATRIX =====")
+            print(f"[CLE] J shape: {J_np.shape}")
+            
+            # Print each row's non-zero pattern
+            for i in range(num_bodies):
+                for r in range(6):
+                    row_idx = i*6 + r
+                    row = J_np[row_idx]
+                    non_zero = np.where(np.abs(row) > 1e-10)[0]
+                    non_zero_vals = row[non_zero]
+                    if len(non_zero) > 0:
+                        print(f"[CLE] J[{row_idx}] (body {i}, component {r}): DOFs {non_zero.tolist()} = {non_zero_vals}")
 
         # build M
         # kernel 21
@@ -2001,6 +2069,32 @@ class MoreauIntegrator:
         )
 
     def eval_contact_quantities(self, model, state_in, state_mid, dt):
+
+        # Add this debug in construct_contact_jacobian or nearby
+        if DEBUG_STEP_COUNTER[0] <= 5:
+            wp.synchronize_device()
+            
+            contact_count = model.rigid_contact_count.numpy()[0]
+            print(f"\n[CLE] ===== CONTACT DEBUG STEP {DEBUG_STEP_COUNTER[0]} =====")
+            print(f"[CLE] rigid_contact_count: {contact_count}")
+            print(f"[CLE] col_height: {model.col_height}")
+            
+            if contact_count > 0:
+                bodies0 = model.rigid_contact_body0.numpy()[:min(4, contact_count)]
+                bodies1 = model.rigid_contact_body1.numpy()[:min(4, contact_count)]
+                points0 = model.rigid_contact_point0.numpy()[:min(4, contact_count)]
+                normals = model.rigid_contact_normal.numpy()[:min(4, contact_count)]
+                
+                print(f"[CLE] First contacts:")
+                for i in range(min(4, contact_count)):
+                    print(f"  Contact {i}: body0={bodies0[i]}, body1={bodies1[i]}")
+                    print(f"    point0={points0[i]}, normal={normals[i]}")
+                
+                # Also print body positions for reference
+                body_q = state_mid.body_X_sc.numpy()  # or state_mid.body_X_sc for CLEMENS
+                print(f"[CLE] Body positions (first 4):")
+                for i in range(min(4, len(body_q))):
+                    print(f"  Body {i}: pos={body_q[i][:3]}")
         # construct J_c
         # kernel 16
         wp.launch(
@@ -2023,6 +2117,20 @@ class MoreauIntegrator:
             outputs=[model.Jc, model.c_body_vec, state_mid.point_vec],
             device=model.device,
         )
+
+        # After construct_contact_jacobian:
+        if DEBUG_STEP_COUNTER[0] <= 2:
+            wp.synchronize_device()
+            import numpy as np
+            
+            Jc_np = self.Jc.numpy() if hasattr(self, 'Jc') else model.Jc.numpy()
+            c_body_np = self.c_body_vec.numpy() if hasattr(self, 'c_body_vec') else model.c_body_vec.numpy()
+            
+            print(f"\n[CLE] ===== Jc DEBUG =====")
+            print(f"[CLE] c_body_vec[0:8]: {c_body_np[0:8]}")  # Which bodies have contacts
+            print(f"[CLE] Jc first 18 values: {Jc_np[:18]}")  # First row of Jc for articulation 0
+            print(f"[CLE] Jc norm: {np.linalg.norm(Jc_np):.6f}")
+            print(f"[CLE] Jc nonzero count: {np.sum(np.abs(Jc_np) > 1e-10)}")
 
         # solve for X^T (X = H^-1*Jc^T)
         wp.launch(
@@ -2293,6 +2401,14 @@ class MoreauIntegrator:
             outputs=[model.G_mat],
             device=model.device,
         )
+
+        # After G_mat is computed:
+        if DEBUG_STEP_COUNTER[0] <= 2:
+            G_mat_np = model.G_mat.numpy()
+            print(f"\n[CLE] ===== G_mat DEBUG =====")
+            print(f"[CLE] G_mat[0,0,0] (3x3): \n{G_mat_np[0,0,0]}")
+            print(f"[CLE] G_mat[0] diagonals: {[G_mat_np[0,i,i] for i in range(4)]}")
+            print(f"[CLE] G_mat norm: {np.linalg.norm(G_mat_np):.6f}")
 
         # solve for x (x = H^-1*h(tau))
         # kernel 12

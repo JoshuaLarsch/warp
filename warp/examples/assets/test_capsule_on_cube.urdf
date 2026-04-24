@@ -1,0 +1,42 @@
+<?xml version="1.0" ?>
+<robot name="test_cube_with_capsule">
+  
+  <link name="base_cube">
+    <visual>
+      <geometry>
+        <box size="0.4 0.4 0.4"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.1 0.1 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.4 0.4 0.4"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="capsule">
+    <visual>
+      <geometry>
+        <cylinder length="0.1" radius="0.05"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.8 0.8 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.1" radius="0.05"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="joint_capsule" type="fixed">
+    <parent link="base_cube"/>
+    <child link="capsule"/>
+    <origin xyz="0 0 0.3"/>
+  </joint>
+
+</robot>

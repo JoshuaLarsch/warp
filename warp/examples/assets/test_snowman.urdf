@@ -1,0 +1,50 @@
+<?xml version="1.0" ?>
+<robot name="test_snowman">
+  
+  <link name="base_ball">
+    <visual>
+      <geometry>
+        <sphere radius="0.3"/>
+      </geometry>
+      <material name="red">
+        <color rgba="0.8 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.3"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="1.0"/>
+      <inertia ixx="0.036" ixy="0.0" ixz="0.0" iyy="0.036" iyz="0.0" izz="0.036"/>
+    </inertial>
+  </link>
+
+  <link name="head_ball">
+    <visual>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+      <material name="green">
+        <color rgba="0.1 0.8 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="joint_head" type="fixed">
+    <parent link="base_ball"/>
+    <child link="head_ball"/>
+    <origin xyz="0 0 0.35"/>
+  </joint>
+
+</robot>
