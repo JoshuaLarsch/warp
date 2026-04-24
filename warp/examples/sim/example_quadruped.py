@@ -280,33 +280,33 @@ class Example:
         # SDFGround Terrain w/generate_terrain.py
           
         # Use for collision
-        volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
-            noise_height=0.1,
-            noise_period=2.0,
-            noise_type="perlin"
-        )
+        # volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
+        #     noise_height=0.1,
+        #     noise_period=2.0,
+        #     noise_type="perlin"
+        # )
 
-        volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
-            primitive_count=15,     # Number of random boxes
-            primitive_size=2.0,     # Max edge length
-            primitive_height=0.3,   # Max top height
-            softmin_k=50.0,        # For future smoothing
-            seed = 44,
-        )
-        terrain_sdf = wp.sim.SDF(volume)
+        # volume, self.terrain_vertices, self.terrain_indices = wp.sim.generate_terrain(
+        #     primitive_count=15,     # Number of random boxes
+        #     primitive_size=2.0,     # Max edge length
+        #     primitive_height=0.3,   # Max top height
+        #     softmin_k=50.0,        # For future smoothing
+        #     seed = 44,
+        # )
+        # terrain_sdf = wp.sim.SDF(volume)
 
-        builder.add_shape_sdf(
-            ke=1.0e4,
-            kd=1000.0,
-            kf=1000.0,
-            mu=0.5,
-            sdf=terrain_sdf,
-            body=-1,
-            pos=wp.vec3(0.0, 0.0, 0.0),
-            rot=wp.quat(0.0, 0.0, 0.0, 1.0),
-            # rot=wp.quat_identity(),
-            scale=wp.vec3(1.0, 1.0, 1.0),
-        )
+        # builder.add_shape_sdf(
+        #     ke=1.0e4,
+        #     kd=1000.0,
+        #     kf=1000.0,
+        #     mu=0.5,
+        #     sdf=terrain_sdf,
+        #     body=-1,
+        #     pos=wp.vec3(0.0, 0.0, 0.0),
+        #     rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+        #     # rot=wp.quat_identity(),
+        #     scale=wp.vec3(1.0, 1.0, 1.0),
+        # )
 
         # #MeshGround
         # vertices = np.array([

@@ -1,3 +1,137 @@
+# Differentiable Simulation for Rough Terrain Locomotion — Master Thesis Fork
+
+This is a fork of NVIDIA Warp used as the implementation vehicle for a master thesis
+(RSL, ETH Zürich, Autumn 2025) on differentiable simulation for rough-terrain
+locomotion. It extends Warp's `FeatherstoneIntegrator` with a Moreau-style
+time-stepping scheme, generalised morphology-agnostic contact resolution with
+arbitrary contact normals, and an SDF-based terrain collision system with
+spatial smoothing for curriculum learning. The upstream Warp documentation
+below is unchanged.
+
+Three additions are relevant to users of this fork:
+
+- `warp.sim.MoreauIntegrator` — differentiable articulated-rigid-body integrator
+  (see `warp/sim/integrator_moreau.py`)
+- `warp.sim.generate_terrain` — SDF terrain generator with log-sum-exp
+  smooth-minimum composition of primitive boxes (see `warp/sim/generate_terrain.py`)
+- SDF-sphere and SDF-capsule contact kernels in `warp/sim/collide.py`, allowing
+  articulated robots with sphere/capsule collision links to contact the baked
+  terrain SDF.
+
+## Moreau integrator
+
+The integrator discretises the equations of motion at the velocity level with
+midpoint integration, solves the contact constraints via a prox iteration
+against the Delassus matrix, and uses an analytically smoothed complementarity
+condition (offset sigmoid) in `mode="soft"` so the full forward step is
+differentiable end-to-end. Up to four simultaneous contacts per articulation
+are supported, with arbitrary (not only upward) contact normals. The
+morphology-agnostic scheduler (`schedule_contacts`) and Jacobian construction
+(`construct_contact_jacobian`) adapt to any URDF-described robot without
+hand-coded body indices.
+
+Usage — the integrator requires a middle `state_mid` buffer for the midpoint
+evaluation:
+
+```python
+import warp as wp
+import warp.sim
+
+# ... build your model as usual ...
+integrator = wp.sim.MoreauIntegrator(model)
+
+state_in  = model.state(requires_grad=True)
+state_mid = model.state(requires_grad=True)
+state_out = model.state(requires_grad=True)
+control   = model.control()
+
+for _ in range(num_steps):
+    integrator.simulate(
+        model, state_in, state_mid, state_out, dt,
+        mode="soft",       # "soft" = analytically smoothed contacts (differentiable)
+                           # "hard" = standard prox without smoothing
+        control=control,
+        mu=0.8,            # Coulomb friction coefficient
+        prox_iter=20,      # prox iteration count per step
+        max_torque=20.0,   # clamp on internal joint forces
+    )
+    state_in, state_out = state_out, state_in
+```
+
+Floating-base robots must be connected to the world through an explicit free
+joint (`ModelBuilder.add_joint_free`), as with the stock Featherstone integrator.
+
+## SDF terrain generation
+
+`generate_terrain` procedurally builds a terrain from random box primitives,
+combines their analytical SDFs via the log-sum-exp smooth-minimum
+
+```
+smin(d_1,…,d_N; k) = - (1/k) · log( Σ_i exp(-k d_i) )
+```
+
+and bakes the result into a sparse `wp.Volume` that can be consumed by
+`ModelBuilder.add_shape_sdf`. The `softmin_k` parameter is the **curriculum
+knob**: low values produce rounded terrain with well-conditioned contact
+normals, high values sharpen toward the true union of the primitives. Values
+above ~100 internally switch to a hard `min` to avoid `exp` overflow.
+
+```python
+import warp as wp
+import warp.sim
+
+volume, terrain_vertices, terrain_indices = wp.sim.generate_terrain(
+    primitive_count=15,     # number of random boxes on top of the base slab
+    primitive_size=2.0,     # max edge length of each random box (m)
+    primitive_height=0.3,   # max top-surface height (m)
+    softmin_k=50.0,         # log-sum-exp sharpness — low = smoother, high = sharper
+    seed=44,
+)
+terrain_sdf = wp.sim.SDF(volume)
+
+builder.add_shape_sdf(
+    ke=1.0e4, kd=1000.0, kf=1000.0, mu=0.5,
+    sdf=terrain_sdf,
+    body=-1,
+    pos=wp.vec3(0.0, 0.0, 0.0),
+    rot=wp.quat(0.0, 0.0, 0.0, 1.0),
+    scale=wp.vec3(1.0, 1.0, 1.0),
+)
+```
+
+`terrain_vertices` / `terrain_indices` are a triangle mesh of the zero level
+set, useful for visualisation. Re-baking the volume with a different
+`softmin_k` is an offline operation and is the intended way to advance a
+training curriculum.
+
+An end-to-end usage example (builder setup, adding the quadruped URDF, adding
+the SDF terrain, stepping the Moreau integrator) is in
+`warp/examples/sim/example_quadruped.py`.
+
+## Known limitation: gradient stability
+
+The forward pass is validated across multiple robot morphologies and terrain
+configurations. End-to-end policy training via SHAC, however, is currently
+blocked by an intermittent gradient explosion that occurs **even on flat
+ground**, so it is not a terrain-geometry issue. The two leading suspects are
+
+1. adjoint correctness through the generalised contact-Jacobian construction —
+   the dynamic scheduling and slot-based contact assignment are the most
+   structurally novel part of the backward pass; and
+2. Cholesky-solve backward sensitivity when the projected inertia matrix
+   approaches near-singularity during contact events.
+
+Standard mitigations (gradient clipping, learning-rate reduction) were tried
+and do not address the underlying variance. Future work needs to first confirm
+the adjoint correctness through the contact pipeline; once that is in place,
+hybrid gradient methods (e.g. Amigo et al. 2024) are the natural next step for
+stabilising the first-order physics gradient. Until this is resolved, the
+differentiable components here should be treated as infrastructure that is
+forward-complete but not yet training-ready. See chapter 5 of the thesis for
+the full diagnosis.
+
+---
+
 [![PyPI version](https://badge.fury.io/py/warp-lang.svg)](https://badge.fury.io/py/warp-lang)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 ![GitHub commit activity](https://img.shields.io/github/commit-activity/m/NVIDIA/warp?link=https%3A%2F%2Fgithub.com%2FNVIDIA%2Fwarp%2Fcommits%2Fmain)

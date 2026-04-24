@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls README.md)",
+      "Bash(head -50 README.md)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('warp/sim/integrator_moreau.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('warp/sim/generate_terrain.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
+    ]
+  }
+}

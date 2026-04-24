@@ -15,6 +15,30 @@
 
 import warp as wp
 from .model import ModelShapeGeometry
+import numpy
+
+
+# ============== DEBUG LOGGING ==============
+DEBUG_STEP_COUNTER_NEW = [0]  # Mutable container for step counting
+
+def debug_log_new(label, data, max_steps=20):
+    """Debug logging helper for NEW integrator"""
+    if DEBUG_STEP_COUNTER_NEW[0] >= max_steps:
+        return
+    if hasattr(data, 'numpy'):
+        arr = data.numpy()
+    else:
+        arr = numpy.array(data)
+    
+    # For large arrays, show summary
+    if arr.size > 20:
+        print(f"[NEW] {label}: shape={arr.shape}, norm={numpy.linalg.norm(arr):.6f}, min={arr.min():.6f}, max={arr.max():.6f}")
+        # Show last 12 values (actuated joints)
+        if arr.size >= 12:
+            print(f"[NEW]   last 12: {arr.flatten()[-12:]}")
+    else:
+        print(f"[NEW] {label}: {arr}")
+# ============================================
 
 from .articulation import (
     compute_2d_rotational_dofs,
@@ -132,7 +156,7 @@ def spatial_transform_inertia(t: wp.transform, I: wp.spatial_matrix):
     R = wp.matrix_from_cols(r1, r2, r3)
     S = wp.skew(p) @ R
 
-    T = wp.spatial_adjoint(R, S)
+    T = wp.spatial_adjoint(R, S) # changed from using featherstone implementation spatial_adjoint(R, S)
 
     return wp.mul(wp.mul(wp.transpose(T), I), T)
 
@@ -405,6 +429,17 @@ def jcalc_motion(
             ),
         )
 
+        # # For a free joint, qd is already the spatial velocity in the world frame. No transform is needed.
+        # # CHANGED TO THE FOLLOWING COPIED FROM CLEMENS
+        # v_j_s = wp.spatial_vector(
+        #     joint_qd[qd_start + 0],
+        #     joint_qd[qd_start + 1],
+        #     joint_qd[qd_start + 2],
+        #     joint_qd[qd_start + 3],
+        #     joint_qd[qd_start + 4],
+        #     joint_qd[qd_start + 5],
+        # )
+
         joint_S_s[qd_start + 0] = transform_twist(X_sc, wp.spatial_vector(1.0, 0.0, 0.0, 0.0, 0.0, 0.0))
         joint_S_s[qd_start + 1] = transform_twist(X_sc, wp.spatial_vector(0.0, 1.0, 0.0, 0.0, 0.0, 0.0))
         joint_S_s[qd_start + 2] = transform_twist(X_sc, wp.spatial_vector(0.0, 0.0, 1.0, 0.0, 0.0, 0.0))
@@ -460,6 +495,12 @@ def jcalc_tau(
         target_kd = joint_target_kd[axis_start]
         mode = joint_axis_mode[axis_start]
 
+        # # total torque / force on the joint
+        # t = -wp.dot(S_s, body_f_s) + eval_joint_force(
+        #     q, qd, act, target_ke, target_kd, lower, upper, limit_ke, limit_kd, mode
+        # )
+
+        # Calculate force from eval_joint_force as before
         f_internal = eval_joint_force(q, qd, act, target_ke, target_kd, lower, upper, limit_ke, limit_kd, mode)
         
         # Clamp the internal force (actuation + limits)
@@ -568,7 +609,7 @@ def jcalc_integrate(
         #  moreau
         w_j_avg = (w_j + w_j_new) * 0.5
 
-        drdt_j = wp.quat(w_j_avg, 0.0) * r_j * 0.5
+        drdt_j = wp.quat(w_j_avg, 0.0) * r_j * 0.5 # CHANGED from drdt_j = wp.quat(w_j_new, 0.0) * r_j * 0.5
 
         # new orientation (normalized)
         r_j_new = wp.normalize(r_j + drdt_j * dt)
@@ -599,7 +640,11 @@ def jcalc_integrate(
         w_s = wp.vec3(joint_qd[dof_start + 0], joint_qd[dof_start + 1], joint_qd[dof_start + 2])
         v_s = wp.vec3(joint_qd[dof_start + 3], joint_qd[dof_start + 4], joint_qd[dof_start + 5])
 
-        # Moreau midpoint update: average of old and new twists.
+        # # symplectic Euler
+        # w_s = w_s + m_s * dt
+        # v_s = v_s + a_s * dt
+
+        # moreau
         w_s_new = w_s + m_s * dt
         w_s_avg = (w_s + w_s_new) / 2.0
         v_s_new = v_s + a_s * dt
@@ -610,14 +655,14 @@ def jcalc_integrate(
 
         # linear vel of origin (note q/qd switch order of linear angular elements)
         # note we are converting the body twist in the space frame (w_s, v_s) to compute center of mass velocity
-        dpdt_s = v_s_avg + wp.cross(w_s_avg, p_s)
+        dpdt_s = v_s_avg + wp.cross(w_s_avg, p_s) # CHANGED from dpdt_s = v_s + wp.cross(w_s, p_s)
 
         # quat and quat derivative
         r_s = wp.quat(
             joint_q[coord_start + 3], joint_q[coord_start + 4], joint_q[coord_start + 5], joint_q[coord_start + 6]
         )
 
-        drdt_s = wp.mul(wp.quat(w_s_avg, 0.0), r_s) * 0.5
+        drdt_s = wp.mul(wp.quat(w_s_avg, 0.0), r_s) * 0.5 # CHANGED from drdt_s = wp.quat(w_s, 0.0) * r_s * 0.5
 
         # new orientation (normalized)
         p_s_new = p_s + dpdt_s * dt
@@ -634,7 +679,7 @@ def jcalc_integrate(
         joint_q_new[coord_start + 6] = r_s_new[3]
 
         # update joint_twist
-        joint_qd_new[dof_start + 0] = w_s_new[0]
+        joint_qd_new[dof_start + 0] = w_s_new[0] # CHANGED from w_s[0]
         joint_qd_new[dof_start + 1] = w_s_new[1]
         joint_qd_new[dof_start + 2] = w_s_new[2]
         joint_qd_new[dof_start + 3] = v_s_new[0]
@@ -877,7 +922,7 @@ def compute_link_velocity(
     # body forces
     I_s = spatial_transform_inertia(X_sm, I_m)
 
-    f_b_s = I_s * a_s + wp.spatial_cross_dual(v_s, I_s * v_s)
+    f_b_s = I_s * a_s + wp.spatial_cross_dual(v_s, I_s * v_s) # changed from using featherstone implementation spatial_cross_dual(v_s, I_s * v_s)
 
     body_v_s[child] = v_s
     body_a_s[child] = a_s
@@ -1077,7 +1122,7 @@ def eval_rigid_jacobian(
 @wp.func
 def spatial_mass(
     body_I_s: wp.array(dtype=wp.spatial_matrix),
-    joint_child: wp.array(dtype=int),
+    joint_child: wp.array(dtype=int),  # ADD THIS
     joint_start: int,
     joint_count: int,
     M_start: int,
@@ -1096,7 +1141,7 @@ def spatial_mass(
 def eval_rigid_mass(
     articulation_start: wp.array(dtype=int),
     articulation_M_start: wp.array(dtype=int),
-    joint_child: wp.array(dtype=int),
+    joint_child: wp.array(dtype=int),  # ADD THIS
     body_I_s: wp.array(dtype=wp.spatial_matrix),
     M: wp.array(dtype=float),
 ):
@@ -1297,6 +1342,8 @@ def eval_dense_gemm_batched(
         B,
         C,
     )
+    # OLD implementation
+    # wp.dense_gemm_batched(m, n, p, transpose_A, transpose_B, A_start, B_start, C_start, A, B, C)
 
 
 # @wp.func
@@ -1351,9 +1398,9 @@ def dense_cholesky(
             r = L[A_start + dense_index(n, j, k)]
             s -= r * r
         
-        # Floor the diagonal with a minimum-inertia value. Clamping to machine
-        # epsilon instead produces huge Cholesky gradient spikes on near-singular
-        # A, so we use a soft floor representing "default" stability.
+        # CHANGED: Instead of clamping to epsilon (which causes explosion),
+        # we check if the matrix is singular. If it is, we add a soft floor
+        # that represents "default" stability.
         if s < min_inertia:
             s = min_inertia
             
@@ -1588,7 +1635,7 @@ def integrate_q_halfstep(
     joint_type: wp.array(dtype=int),
     joint_q_start: wp.array(dtype=int),
     joint_qd_start: wp.array(dtype=int),
-    joint_axis_dim: wp.array(dtype=int, ndim=2),
+    joint_axis_dim: wp.array(dtype=int, ndim=2),# Added for NEW jcalc_integrate_q implementation
     joint_q: wp.array(dtype=float),
     joint_qd: wp.array(dtype=float),
     dt: float,
@@ -1604,9 +1651,10 @@ def integrate_q_halfstep(
     lin_axis_count = joint_axis_dim[tid, 0]
     ang_axis_count = joint_axis_dim[tid, 1]
 
+    # jcalc_integrate_q(type, joint_q, joint_qd, coord_start, dof_start, dt / 2.0, joint_q_new) # OLD call for OLD jcalc_integrate_q implementation
     jcalc_integrate_q(type, joint_q, joint_qd, coord_start, dof_start, lin_axis_count, ang_axis_count, dt / 2.0, joint_q_new)
 
-
+# NEW implementation based on featherstones jcalc_integrate kernel
 @wp.func
 def jcalc_integrate_q(
     type: int,
@@ -1740,7 +1788,7 @@ def construct_contact_jacobian(
     c_body_vec: wp.array(dtype=int),
     point_vec: wp.array(dtype=wp.vec3),
     contact_normals: wp.array(dtype=wp.vec3),
-    ground_point_vec: wp.array(dtype=wp.vec3),
+    ground_offset: wp.array(dtype=wp.vec3),  # NEW: Ground surface points
 ):
     tid = wp.tid() # Articulation Index
     
@@ -1893,7 +1941,7 @@ def construct_contact_jacobian(
                     c_body_vec[tid * 4 + slot] = target_body
                     point_vec[tid * 4 + slot] = p_surface
                     contact_normals[tid * 4 + slot] = c_normal
-                    ground_point_vec[tid * 4 + slot] = p_surface_other
+                    ground_offset[tid * 4 + slot] = p_surface_other  # NEW: Output ground surface
                     
                 else:
                     # --- INACTIVE CONTACT: EXPLICIT ZEROING ---
@@ -1906,7 +1954,7 @@ def construct_contact_jacobian(
                     c_body_vec[tid * 4 + slot] = -1
                     point_vec[tid * 4 + slot] = wp.vec3(0.0)
                     contact_normals[tid * 4 + slot] = wp.vec3(0.0, 1.0, 0.0)
-                    ground_point_vec[tid * 4 + slot] = wp.vec3(0.0)
+                    ground_offset[tid * 4 + slot] = wp.vec3(0.0,0.0,0.0)  # NEW
 
 
 
@@ -2092,7 +2140,7 @@ def split_matrix(
 
     for i in range(dof_count):
         a_1[a_start[tid] + i] = A[A_start[tid] + i]
-        a_2[a_start[tid] + i] = A[A_start[tid] + i + 1*dof_count]
+        a_2[a_start[tid] + i] = A[A_start[tid] + i + 1*dof_count] # CHANGED from hardcoded A[A_start[tid] + i + 18]
         a_3[a_start[tid] + i] = A[A_start[tid] + i + 2*dof_count] #36
         a_4[a_start[tid] + i] = A[A_start[tid] + i + 3*dof_count] #54
         a_5[a_start[tid] + i] = A[A_start[tid] + i + 4*dof_count] #72
@@ -2127,7 +2175,7 @@ def create_matrix(
 
     for i in range(dof_count):
         A[A_start[tid] + i] = a_1[a_start[tid] + i]
-        A[A_start[tid] + i + 1*dof_count] = a_2[a_start[tid] + i]
+        A[A_start[tid] + i + 1*dof_count] = a_2[a_start[tid] + i] # CHANGED fromA[A_start[tid] + i + 18]
         A[A_start[tid] + i + 2*dof_count] = a_3[a_start[tid] + i] # 36
         A[A_start[tid] + i + 3*dof_count] = a_4[a_start[tid] + i] # 54
         A[A_start[tid] + i + 4*dof_count] = a_5[a_start[tid] + i] # 72
@@ -2143,7 +2191,7 @@ def matmul_batched(batch_count, m, n, k, t1, t2, A_start, B_start, C_start, A, B
     if device == "cpu":
         threads = batch_count
     else:
-        threads = batch_count  # must match the threadblock size used in adjoint.py
+        threads = batch_count # CHANGED FROM 256 * batch_count  # must match the threadblock size used in adjoint.py
 
     wp.launch(
         kernel=eval_dense_gemm_batched,
@@ -2180,7 +2228,7 @@ def convert_c_to_vector(c: wp.array(dtype=float), c_vec: wp.array2d(dtype=wp.vec
 def prox_iteration_unrolled(
     G_mat: wp.array3d(dtype=wp.mat33),
     c_vec: wp.array2d(dtype=wp.vec3),
-    contact_normals: wp.array(dtype=wp.vec3),
+    contact_normals: wp.array(dtype=wp.vec3), # ADDED
     mu: float,
     prox_iter: int,
     percussion: wp.array2d(dtype=wp.vec3),
@@ -2193,19 +2241,25 @@ def prox_iteration_unrolled(
     c_vec_3 = c_vec[tid, 3]
 
 
-    # Contact normals for this articulation's four contact slots.
+    # Get contact normals for this articulation
     n0 = contact_normals[tid * 4 + 0]
     n1 = contact_normals[tid * 4 + 1]
     n2 = contact_normals[tid * 4 + 2]
     n3 = contact_normals[tid * 4 + 3]
 
-    # Initialise percussions with the steady-state solution of the diagonal blocks.
+    # initialize percussions with steady state
     p_0 = -wp.inverse(G_mat[tid, 0, 0]) * c_vec_0
     p_1 = -wp.inverse(G_mat[tid, 1, 1]) * c_vec_1
     p_2 = -wp.inverse(G_mat[tid, 2, 2]) * c_vec_2
     p_3 = -wp.inverse(G_mat[tid, 3, 3]) * c_vec_3
+    # overwrite percussions with steady state only in normal direction
+    # p_0 = wp.vec3(0.0, p_0[1], 0.0)
+    # p_1 = wp.vec3(0.0, p_1[1], 0.0)
+    # p_2 = wp.vec3(0.0, p_2[1], 0.0)
+    # p_3 = wp.vec3(0.0, p_3[1], 0.0)
 
-    p_0, p_1, p_2, p_3 = prox_loop(tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, n0, n1, n2, n3, mu, prox_iter, p_0, p_1, p_2, p_3)
+    # p_0, p_1, p_2, p_3 = prox_loop(tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, mu, prox_iter, p_0, p_1, p_2, p_3) #OLD - CHANGED FOR HANGLING CONTACT NORMALS
+    p_0, p_1, p_2, p_3 = prox_loop(tid, G_mat, c_vec_0, c_vec_1, c_vec_2, c_vec_3, n0, n1, n2, n3, mu, prox_iter, p_0, p_1, p_2, p_3) # new
 
     percussion[tid, 0] = p_0
     percussion[tid, 1] = p_1
@@ -2215,10 +2269,10 @@ def prox_iteration_unrolled(
 @wp.kernel
 def prox_iteration_unrolled_soft(
     point_vec: wp.array(dtype=wp.vec3),
-    ground_point_vec: wp.array(dtype=wp.vec3),
+    ground_offset: wp.array(dtype=wp.vec3), # NEW: Ground surface points
     G_mat: wp.array3d(dtype=wp.mat33),
     c_vec: wp.array2d(dtype=wp.vec3),
-    contact_normals: wp.array(dtype=wp.vec3),
+    contact_normals: wp.array(dtype=wp.vec3), # ADDED
     mu: float,
     prox_iter: int,
     scale_array: wp.array(dtype=float),
@@ -2235,30 +2289,26 @@ def prox_iteration_unrolled_soft(
     n2 = contact_normals[tid * 4 + 2]
     n3 = contact_normals[tid * 4 + 3]
 
-
     point_0 = point_vec[tid * 4]
     point_1 = point_vec[tid * 4 + 1]
     point_2 = point_vec[tid * 4 + 2]
     point_3 = point_vec[tid * 4 + 3]
     
-    # ADD: Get ground points
-    ground_0 = ground_point_vec[tid * 4]
-    ground_1 = ground_point_vec[tid * 4 + 1]
-    ground_2 = ground_point_vec[tid * 4 + 2]
-    ground_3 = ground_point_vec[tid * 4 + 3]
+    # NEW: Get ground surface points
+    ground_0 = ground_offset[tid * 4 + 0]
+    ground_1 = ground_offset[tid * 4 + 1]
+    ground_2 = ground_offset[tid * 4 + 2]
+    ground_3 = ground_offset[tid * 4 + 3]
     
-    # Signed gap along the contact normal, measured from the body point to the
-    # closest point on the other surface. With arbitrary contact normals this
-    # must be a *relative* distance, not an absolute coordinate.
+    # NEW: Calculate constraint relative to ground surface (not world origin)
     c_0 = wp.dot(n0, point_0 - ground_0)
     c_1 = wp.dot(n1, point_1 - ground_1)
     c_2 = wp.dot(n2, point_2 - ground_2)
     c_3 = wp.dot(n3, point_3 - ground_3)
-
-    c_vec_0 = c_vec[tid, 0]  * offset_sigmoid(c_0, scale, 0.0)
-    c_vec_1 = c_vec[tid, 1]  * offset_sigmoid(c_1, scale, 0.0)
-    c_vec_2 = c_vec[tid, 2]  * offset_sigmoid(c_2, scale, 0.0)
-    c_vec_3 = c_vec[tid, 3]  * offset_sigmoid(c_3, scale, 0.0)
+    c_vec_0 = c_vec[tid, 0]  # * offset_sigmoid(c_0, scale, 0.0)
+    c_vec_1 = c_vec[tid, 1]  # * offset_sigmoid(c_1, scale, 0.0)
+    c_vec_2 = c_vec[tid, 2]  # * offset_sigmoid(c_2, scale, 0.0)
+    c_vec_3 = c_vec[tid, 3]  # * offset_sigmoid(c_3, scale, 0.0)
 
     # initialize percussions with steady state
     p_0 = -wp.inverse(G_mat[tid, 0, 0]) * c_vec_0
@@ -2321,8 +2371,7 @@ def prox_loop(
     p_3: wp.vec3,
 ):
 
-    # Additive term on r_sum to keep the prox step bounded when contacts are
-    # near-singular.
+    #stability addition CHANGED FROM 1.0
     STABILITY_ADDITION = 1.0
 
     for it in range(prox_iter):
@@ -2342,10 +2391,22 @@ def prox_loop(
 
         r = 1.0 / (STABILITY_ADDITION + r_sum)  # +1 for stability 
 
+        # #DEBUG
+        # if tid == 0 and it == 0:
+        #     wp.printf("Contact 0: r_sum=%.6f, r=%.6f\n", r_sum, r)
+
         # update percussion
         p_0 = p_0 - r * (sum + c_vec_0)
 
-        # Project onto the friction cone aligned with the contact normal n0.
+        # # projection to friction cone
+        # if p_0[1] <= 0.0:
+        #     p_0 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_0[0] != 0.0 or p_0[2] != 0.0:
+        #     fm = wp.sqrt(p_0[0] ** 2.0 + p_0[2] ** 2.0)  # friction magnitude
+        #     if mu * p_0[1] < fm:
+        #         p_0 = wp.vec3(p_0[0] * mu * p_0[1] / fm, p_0[1], p_0[2] * mu * p_0[1] / fm)
+
+        # HANDLE PROJECTION along contact normal and tangential direction alligned with percussion
         p_n = wp.dot(n0, p_0)
 
         if p_n <= 0.0:
@@ -2381,7 +2442,15 @@ def prox_loop(
         # update percussion
         p_1 = p_1 - r * (sum + c_vec_1)
 
-        # Project onto the friction cone aligned with the contact normal n1.
+        # # projection to friction cone
+        # if p_1[1] <= 0.0:
+        #     p_1 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_1[0] != 0.0 or p_1[2] != 0.0:
+        #     fm = wp.sqrt(p_1[0] ** 2.0 + p_1[2] ** 2.0)  # friction magnitude
+        #     if mu * p_1[1] < fm:
+        #         p_1 = wp.vec3(p_1[0] * mu * p_1[1] / fm, p_1[1], p_1[2] * mu * p_1[1] / fm)
+
+        # HANDLE PROJECTION along contact normal and tangential direction alligned with percussion
         p_n = wp.dot(n1, p_1)
 
         if p_n <= 0.0:
@@ -2417,7 +2486,15 @@ def prox_loop(
         # update percussion
         p_2 = p_2 - r * (sum + c_vec_2)
 
-        # Project onto the friction cone aligned with the contact normal n2.
+        # # projection to friction cone
+        # if p_2[1] <= 0.0:
+        #     p_2 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_2[0] != 0.0 or p_2[2] != 0.0:
+        #     fm = wp.sqrt(p_2[0] ** 2.0 + p_2[2] ** 2.0)  # friction magnitude
+        #     if mu * p_2[1] < fm:
+        #         p_2 = wp.vec3(p_2[0] * mu * p_2[1] / fm, p_2[1], p_2[2] * mu * p_2[1] / fm)
+
+        # HANDLE PROJECTION along contact normal and tangential direction alligned with percussion
         p_n = wp.dot(n2, p_2)
 
         if p_n <= 0.0:
@@ -2453,7 +2530,15 @@ def prox_loop(
         # update percussion
         p_3 = p_3 - r * (sum + c_vec_3)
 
-        # Project onto the friction cone aligned with the contact normal n3.
+        # # projection to friction cone
+        # if p_3[1] <= 0.0:
+        #     p_3 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_3[0] != 0.0 or p_3[2] != 0.0:
+        #     fm = wp.sqrt(p_3[0] ** 2.0 + p_3[2] ** 2.0)  # friction magnitude
+        #     if mu * p_3[1] < fm:
+        #         p_3 = wp.vec3(p_3[0] * mu * p_3[1] / fm, p_3[1], p_3[2] * mu * p_3[1] / fm)
+
+        # HANDLE PROJECTION along contact normal and tangential direction alligned with percussion
         p_n = wp.dot(n3, p_3)
 
         if p_n <= 0.0:
@@ -2516,6 +2601,14 @@ def prox_loop_soft(
         # update percussion
         p_0 = p_0 - r * (sum + c_vec_0)
 
+        # # projection to friction cone
+        # if p_0[1] <= 0.0:
+        #     p_0 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_0[0] != 0.0 or p_0[2] != 0.0:
+        #     fm = wp.sqrt(p_0[0] ** 2.0 + p_0[2] ** 2.0)  # friction magnitude
+        #     if mu * p_0[1] < fm:
+        #         p_0 = wp.vec3(p_0[0] * mu * p_0[1] / fm, p_0[1], p_0[2] * mu * p_0[1] / fm)
+
         p_n = wp.dot(n0, p_0)
 
         if p_n <= 0.0:
@@ -2550,6 +2643,14 @@ def prox_loop_soft(
 
         # update percussion
         p_1 = p_1 - r * (sum + c_vec_1)
+
+        # # projection to friction cone
+        # if p_1[1] <= 0.0:
+        #     p_1 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_1[0] != 0.0 or p_1[2] != 0.0:
+        #     fm = wp.sqrt(p_1[0] ** 2.0 + p_1[2] ** 2.0)  # friction magnitude
+        #     if mu * p_1[1] < fm:
+        #         p_1 = wp.vec3(p_1[0] * mu * p_1[1] / fm, p_1[1], p_1[2] * mu * p_1[1] / fm)
 
         p_n = wp.dot(n1, p_1)
 
@@ -2586,6 +2687,14 @@ def prox_loop_soft(
         # update percussion
         p_2 = p_2 - r * (sum + c_vec_2)
 
+        # # projection to friction cone
+        # if p_2[1] <= 0.0:
+        #     p_2 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_2[0] != 0.0 or p_2[2] != 0.0:
+        #     fm = wp.sqrt(p_2[0] ** 2.0 + p_2[2] ** 2.0)  # friction magnitude
+        #     if mu * p_2[1] < fm:
+        #         p_2 = wp.vec3(p_2[0] * mu * p_2[1] / fm, p_2[1], p_2[2] * mu * p_2[1] / fm)
+
         p_n = wp.dot(n2, p_2)
 
         if p_n <= 0.0:
@@ -2620,6 +2729,14 @@ def prox_loop_soft(
 
         # update percussion
         p_3 = p_3 - r * (sum + c_vec_3)
+
+        # # projection to friction cone
+        # if p_3[1] <= 0.0:
+        #     p_3 = wp.vec3(0.0, 0.0, 0.0)
+        # elif p_3[0] != 0.0 or p_3[2] != 0.0:
+        #     fm = wp.sqrt(p_3[0] ** 2.0 + p_3[2] ** 2.0)  # friction magnitude
+        #     if mu * p_3[1] < fm:
+        #         p_3 = wp.vec3(p_3[0] * mu * p_3[1] / fm, p_3[1], p_3[2] * mu * p_3[1] / fm)\
 
         p_n = wp.dot(n3, p_3)
 
@@ -2685,11 +2802,11 @@ def dense_G_index(G_start: wp.array(dtype=int), tid: int, i: int, j: int, k: int
 
 @wp.kernel 
 def map_shape_contacts_to_body_contacts(
-    contact_count: wp.array(dtype=int),
+    contact_count: wp.array(dtype=int), # ADDED TO LIMIT INDEXING
     contact_shape0: wp.array(dtype=int),
     contact_shape1: wp.array(dtype=int), 
     shape_body: wp.array(dtype=int),
-    shape_count: int,
+    shape_count: int, # ADDED: Need strictly valid shape count,
     contact_body0: wp.array(dtype=int),
     contact_body1: wp.array(dtype=int)
 ):
@@ -2777,44 +2894,43 @@ def compute_body_qd_inertial(
 
 
 class MoreauIntegrator(Integrator):
-    """Differentiable Moreau time-stepping integrator for articulated rigid bodies.
+    """A semi-implicit integrator using symplectic Euler that operates
+    on reduced (also called generalized) coordinates to simulate articulated rigid body dynamics
+    based on Featherstone's composite rigid body algorithm (CRBA).
 
-    This integrator extends Warp's Featherstone CRBA dynamics with the Moreau
-    velocity-level time-stepping scheme and analytically smoothed contacts, so
-    the full forward step is differentiable end-to-end. Each simulation step:
+    See: Featherstone, Roy. Rigid Body Dynamics Algorithms. Springer US, 2014.
 
-    1. advances joint positions to a midpoint ``q_{k+1/2} = q_k + (h/2) q'_k``,
-       at which all inertial and bias quantities are evaluated;
-    2. assembles and Cholesky-factorises the joint-space inertia matrix;
-    3. schedules active contacts per articulation, builds the contact Jacobian
-       ``J_c`` with arbitrary (i.e. not necessarily upward) contact normals,
-       and resolves contact impulses via a prox iteration. The ``"soft"`` mode
-       modulates the complementarity condition with an offset sigmoid, which
-       is what makes the contact response smooth and differentiable;
-    4. recomputes joint torques with the contact forces applied and integrates
-       the articulated state forward one full step.
+    Instead of maximal coordinates :attr:`State.body_q` (rigid body positions) and :attr:`State.body_qd`
+    (rigid body velocities) as is the case :class:`SemiImplicitIntegrator`, :class:`FeatherstoneIntegrator`
+    uses :attr:`State.joint_q` and :attr:`State.joint_qd` to represent the positions and velocities of
+    joints without allowing any redundant degrees of freedom.
 
-    The integrator is morphology-agnostic: any URDF-described robot is handled
-    via the ``body_to_articulation`` and ``body_to_joint`` lookup tables built
-    at construction time. Up to four simultaneous contacts per articulation
-    are supported.
+    After constructing :class:`Model` and :class:`State` objects this time-integrator
+    may be used to advance the simulation state forward in time.
 
-    Example::
+    Note:
+        Unlike :class:`SemiImplicitIntegrator` and :class:`XPBDIntegrator`, :class:`FeatherstoneIntegrator` does not simulate rigid bodies with nonzero mass as floating bodies if they are not connected through any joints. Floating-base systems require an explicit free joint with which the body is connected to the world, see :meth:`ModelBuilder.add_joint_free`.
 
-        integrator = MoreauIntegrator(model)
+    Semi-implicit time integration is a variational integrator that
+    preserves energy, however it not unconditionally stable, and requires a time-step
+    small enough to support the required stiffness and damping forces.
 
-        # simulation loop (note the midpoint state between in and out):
-        for i in range(num_steps):
-            integrator.simulate(
-                model, state_in, state_mid, state_out, dt,
-                mode="soft", control=control, mu=0.8, prox_iter=20,
-            )
-            state_in, state_out = state_out, state_in
+    See: https://en.wikipedia.org/wiki/Semi-implicit_Euler_method
 
-    The :class:`MoreauIntegrator` requires the :class:`Model` as a constructor
-    argument so it can pre-allocate per-articulation buffers. Floating-base
-    systems must be connected to the world via an explicit free joint (see
-    :meth:`ModelBuilder.add_joint_free`).
+    Example
+    -------
+
+    .. code-block:: python
+
+        integrator = wp.FeatherstoneIntegrator(model)
+
+        # simulation loop
+        for i in range(100):
+            state = integrator.simulate(model, state_in, state_out, dt)
+
+    Note:
+        The :class:`FeatherstoneIntegrator` requires the :class:`Model` to be passed in as a constructor argument.
+
     """
 
     def __init__(
@@ -2898,19 +3014,23 @@ class MoreauIntegrator(Integrator):
             joint_q_start = model.joint_q_start.numpy()
             joint_qd_start = model.joint_qd_start.numpy()
 
-            # Moreau-specific lookup tables for the morphology-agnostic contact
-            # resolution: body_to_joint maps a body index to its parent joint,
-            # body_articulation maps a body to its articulation.
+            # Moreau specific addition (mapping from body to articulation)
+            # body_articulation = []
             body_articulation = [-1] * model.body_count
             articulation_start = model.articulation_start.numpy()
 
+            # Moreau specific addition (mapping from body to joint)
+            # Create inverse mapping: body -> joint
             body_to_joint = [-1] * model.body_count
             joint_child = model.joint_child.numpy()
             for joint_idx in range(model.joint_count):
                 child_body = joint_child[joint_idx]
-                if child_body >= 0:
+                if child_body >= 0:  # Valid body
                     body_to_joint[child_body] = joint_idx
+                    # print("child_body=%d   ------ joint_idx=%d\n",child_body, joint_idx)
             self.body_to_joint = wp.array(body_to_joint, dtype=wp.int32, device=model.device)
+            # print(f"body_to_joint : {body_to_joint}") # DEBUG
+
 
             for i in range(model.articulation_count):
                 first_joint = articulation_start[i]
@@ -2930,7 +3050,14 @@ class MoreauIntegrator(Integrator):
                 articulation_dof_start.append(first_dof)
                 articulation_coord_start.append(first_coord)
 
-                # Fill the body_articulation map by walking joint children.
+                # Moreau specific addition (mapping from body to articulation)
+                # body_start = articulation_start[i]
+                # body_end = articulation_start[i + 1]
+                # for body_id in range(body_start, body_end):
+
+                #     body_articulation.append(i)
+
+                # use actual joint to body mapping
                 joint_start = articulation_start[i]
                 joint_end = articulation_start[i + 1]
                 for joint_id in range(joint_start, joint_end):
@@ -2956,11 +3083,13 @@ class MoreauIntegrator(Integrator):
                 articulation_G_rows.append(4*3)
                 articulation_vec_size.append(1)
 
-                if True:
-                    # Cache joint/dof counts, assuming every articulation has
-                    # the same structure (required for the tiled gemm path).
+                if True:  # CHANGED from if self.use_tile_gemm: 
+                    # store the joint and dof count assuming all
+                    # articulations have the same structure
                     self.joint_count = joint_count
                     self.dof_count = dof_count
+                    # print(f"joint_count : {joint_count}") # DEBUG
+                    # print(f"dof_count : {dof_count}") # DEBUG
 
                 self.J_size += 6 * joint_count * dof_count
                 self.M_size += 6 * joint_count * 6 * joint_count
@@ -2986,7 +3115,16 @@ class MoreauIntegrator(Integrator):
             self.articulation_J_rows = wp.array(articulation_J_rows, dtype=wp.int32, device=model.device)
             self.articulation_J_cols = wp.array(articulation_J_cols, dtype=wp.int32, device=model.device)
 
+            # # Moreau specific addition (mapping from body to articulation)
+            # for i in range(articulation_start[model.articulation_count],len(model.shape_body.numpy())):
+            #     body_articulation.append(-1) # adding mapping for non-articulation bodies
+            #     print(f"setting body_articulation index {i} to -1 ")
+
             self.body_articulation = wp.array(body_articulation, dtype=wp.int32, device=model.device)
+
+            # # DEBUG checking how  self.body_articulatio handles non articulation bodies
+            # print(f"body_articulation : {body_articulation}\n")
+            # print(f"model.shape_body.numpy() : {model.shape_body.numpy()}\n")
 
             # Moreau specific additions
             self.articulation_Jc_rows = wp.array(articulation_Jc_rows, dtype=wp.int32)
@@ -3004,20 +3142,24 @@ class MoreauIntegrator(Integrator):
         if model.joint_count:
 
             ################### MOREAU SPECIFIC ALLOCATIONS BEGIN ###################
-            # Sharpness of the sigmoid used for analytical contact smoothing
-            # (see offset_sigmoid and prox_loop_soft).
+            #self.sigmoid_scale = wp.zeros(1, dtype=wp.float32, requires_grad=requires_grad)
             self.sigmoid_scale = wp.array([100.0], dtype=wp.float32)
 
-            # Contact Jacobian (flattened per articulation).
+            # Contact Jacobian matrix
             self.Jc = wp.zeros((self.Jc_size,), dtype=wp.float32, device=model.device, requires_grad=model.requires_grad)
-
-            # Delassus matrix G = Jc * M^-1 * Jc^T: flattened and matrix form.
+            # self.Jc = wp.zeros(self.Jc_size, dtype=wp.float32, requires_grad=True)
+            
+            # Delassus matrix (flattened)  
             self.G = wp.zeros((self.G_size,), dtype=wp.float32, device=model.device, requires_grad=model.requires_grad)
+            # self.G = wp.zeros(self.G_size, dtype=wp.float32, requires_grad=True)
+            
+            # Delassus matrix (matrix form)
             self.G_mat = wp.zeros((model.articulation_count, 4, 4), dtype=wp.mat33, device=model.device, requires_grad=model.requires_grad)
-
-            # Contact-body lookup: for each of the (articulation, contact-slot)
-            # pairs, stores the body index responsible for that contact.
+            # self.G_mat = wp.zeros((self.articulation_count,4,4), dtype=wp.mat33, requires_grad=True)
+            
+            # Contact body vectors
             self.c_body_vec = wp.zeros((model.articulation_count*4,), dtype=wp.int32, device=model.device)
+            # self.c_body_vec = wp.zeros(self.articulation_count*4, dtype=wp.int32, device=self.device)
 
             self.col_height = 1.0
 
@@ -3102,7 +3244,8 @@ class MoreauIntegrator(Integrator):
             target.contact_normals = wp.zeros(model.articulation_count*4, dtype=wp.vec3, requires_grad=True)
             target.contact_normals.fill_(wp.vec3(0.0, 1.0, 0.0))
             target.percussion = wp.zeros((model.articulation_count, 4), dtype=wp.vec3, requires_grad=True)
-            target.ground_point_vec = wp.zeros(model.articulation_count*4, dtype=wp.vec3, requires_grad=True)
+            target.groundoffset = wp.zeros(model.articulation_count*4, dtype=wp.vec3, requires_grad=True)
+
 
             # compute G and c
             target.inv_m_times_h = wp.zeros_like(model.joint_qd, requires_grad=True) # maybe set to 0?
@@ -3238,7 +3381,7 @@ class MoreauIntegrator(Integrator):
                             model.joint_type,
                             model.joint_q_start,
                             model.joint_qd_start,
-                            model.joint_axis_dim,
+                            model.joint_axis_dim, # Added for NEW jcalc_integrate_q implementation
                             state_in.joint_q,
                             state_in.joint_qd,
                             dt,
@@ -3258,7 +3401,7 @@ class MoreauIntegrator(Integrator):
                         model.joint_parent,
                         model.joint_child,
                         model.joint_q_start,
-                        state_mid.joint_q,
+                        state_mid.joint_q, # CHANGED from  state_in.joint_q
                         model.joint_X_p,
                         model.joint_X_c,
                         self.body_X_com,
@@ -3266,7 +3409,8 @@ class MoreauIntegrator(Integrator):
                         model.joint_axis_start,
                         model.joint_axis_dim,
                     ],
-                    outputs=[state_mid.body_q, state_mid.body_q_com],
+                    outputs=[state_mid.body_q, state_mid.body_q_com], # CHANGED from  [state_in.body_q, state_mid.body_q_com] 
+# !!!!!!!! POTENTIAL ISSUE DUE TO POSSIBLE DIFFERENCES BETWEEN body_q_com and clemens' body_X_sm
                     device=model.device,
                 )
 
@@ -3285,13 +3429,13 @@ class MoreauIntegrator(Integrator):
                         model.joint_child,
                         model.joint_q_start,
                         model.joint_qd_start,
-                        state_mid.joint_q,
+                        state_mid.joint_q, # CHANGED from  state_in.joint_q
                         state_in.joint_qd,
                         model.joint_axis,
                         model.joint_axis_start,
                         model.joint_axis_dim,
                         self.body_I_m,
-                        state_mid.body_q,
+                        state_mid.body_q, # CHANGED from  state_in.body_q
                         state_mid.body_q_com,
                         model.joint_X_p,
                         model.joint_X_c,
@@ -3307,28 +3451,166 @@ class MoreauIntegrator(Integrator):
                     device=model.device,
                 )
 
+                # # ============== DEBUG: Frame Convention Check ==============
+                # if DEBUG_STEP_COUNTER_NEW[0] < 2:
+                #     wp.synchronize_device()
+                    
+                #     # Print body transforms
+                #     if hasattr(state_mid, 'body_X_sc'):  # Clemens
+                #         body_tf = state_mid.body_X_sc.numpy()
+                #     else:  # New - use body_q
+                #         body_tf = state_mid.body_q.numpy()
+                    
+                #     print(f"[NEW] Body transforms (first 3 bodies):")
+                #     for i in range(3):
+                #         print(f"  Body {i}: {body_tf[i]}")
+                    
+                #     # Print motion subspace vectors
+                #     S_s = state_mid.joint_S_s.numpy()  # or state_mid.joint_S_s
+                #     print(f"[NEW] joint_S_s for FREE JOINT (DOFs 0-5):")
+                #     for i in range(6):
+                #         print(f"  S_s[{i}]: {S_s[i]}")
+                    
+                #     print(f"[NEW] joint_S_s for FIRST ACTUATED JOINTS (DOFs 6-8):")
+                #     for i in range(6, 9):
+                #         print(f"  S_s[{i}]: {S_s[i]}")
+                # # ===========================================================
+                # if DEBUG_STEP_COUNTER_NEW[0] < 1:
+                #     print(f"[NEW] Joint-Body Mapping:")
+                #     joint_parent = model.joint_parent.numpy()
+                #     joint_child = model.joint_child.numpy() if hasattr(model, 'joint_child') else None
+                #     joint_names = getattr(model, 'joint_name', None)
+                    
+                #     for i in range(min(13, len(joint_parent))):
+                #         name = joint_names[i] if joint_names else f"joint_{i}"
+                #         child = joint_child[i] if joint_child is not None else "N/A"
+                #         print(f"  Joint {i} ({name}): parent={joint_parent[i]}, child={child}")
+
+                
+                # OLD contact solving
+                # if model.rigid_contact_max and (
+                #     (model.ground and model.shape_ground_contact_pair_count) or model.shape_contact_pair_count
+                # ):
+                #     wp.launch(
+                #         kernel=eval_rigid_contacts,
+                #         dim=model.rigid_contact_max,
+                #         inputs=[
+                #             state_mid.body_q, # CHANGED from  state_in.body_q
+                #             state_mid.body_v_s,
+                #             model.body_com,
+                #             model.shape_materials,
+                #             model.shape_geo,
+                #             model.shape_body,
+                #             model.rigid_contact_count,
+                #             model.rigid_contact_point0,
+                #             model.rigid_contact_point1,
+                #             model.rigid_contact_normal,
+                #             model.rigid_contact_shape0,
+                #             model.rigid_contact_shape1,
+                #             True,
+                #             self.friction_smoothing,
+                #         ],
+                #         outputs=[body_f],
+                #         device=model.device,
+                #     )
+
+                #     # if model.rigid_contact_count.numpy()[0] > 0:
+                #     #     print(body_f.numpy())
+
+                #                         # eval_tau (tau will be h)
+                #     state_mid.body_ft_s.zero_()
+                #     wp.launch(
+                #         eval_rigid_tau,
+                #         dim=model.articulation_count,
+                #         inputs=[
+                #             model.articulation_start,
+                #             model.joint_type,
+                #             model.joint_parent,
+                #             model.joint_child,
+                #             model.joint_q_start,
+                #             model.joint_qd_start,
+                #             model.joint_axis_start,
+                #             model.joint_axis_dim,
+                #             model.joint_axis_mode,
+                #             state_mid.joint_q, # CHANGED from  state_in.body_q
+                #             state_in.joint_qd,
+                #             control.joint_act,
+                #             model.joint_target_ke,
+                #             model.joint_target_kd,
+                #             model.joint_limit_lower,
+                #             model.joint_limit_upper,
+                #             model.joint_limit_ke,
+                #             model.joint_limit_kd,
+                #             state_mid.joint_S_s,
+                #             state_mid.body_f_s,
+                #             body_f,
+                #         ],
+                #         outputs=[
+                #             state_mid.body_ft_s,
+                #             state_mid.joint_tau,
+                #         ],
+                #         device=model.device,
+                #     )
+                    
+
                 if model.articulation_count:
                     ############################ Moreau Contact Resolution BEGIN ############################
-
+                    
                     if True:
-                        # Map contact shape indices to body indices.
+                        # Map: body = shape_body[shape]
                         wp.launch(
                             kernel=map_shape_contacts_to_body_contacts,
                             dim=model.rigid_contact_max,
                             inputs=[
-                                model.rigid_contact_count,
+                                model.rigid_contact_count, # ADDED TO LIMIT INDEXING
                                 model.rigid_contact_shape0,
                                 model.rigid_contact_shape1,
                                 model.shape_body,
-                                model.shape_count,
+                                model.shape_count
                             ],
-                            outputs=[self.rigid_contact_body0, self.rigid_contact_body1],
+                            outputs=[self.rigid_contact_body0, self.rigid_contact_body1]
                         )
+                    
 
-                    if True:
-                        self.eval_mass_matrix(model, state_mid)
+                    # if self._step % self.update_mass_matrix_every == 0: # NEW mass matrix eval call
+                    if True: # CHANGED for DEBUG to ensure being called always
+                        self.eval_mass_matrix(model ,state_mid)
+                    
+                    # After self.eval_mass_matrix(model, state_mid)
+                    # if DEBUG_STEP_COUNTER_NEW[0] == 0:
+                    #     H_np = self.H.numpy()
+                    #     L_np = self.L.numpy()
+                    #     print(f"[DEBUG] H-Matrix diag (first 6): {H_np.reshape(-1, 18, 18)[0].diagonal()[:6]}")
+                    #     print(f"[DEBUG] L-Matrix diag (first 6): {L_np.reshape(-1, 18, 18)[0].diagonal()[:6]}")
 
-                    # eval_tau (pre-contact): h(tau) before contact forces are added
+                    # ============== DEBUG CHECKPOINT 1 ==============
+                    if DEBUG_STEP_COUNTER_NEW[0] < 20:
+                        print(f"\n{'='*60}")
+                        print(f"[NEW] ========== STEP {DEBUG_STEP_COUNTER_NEW[0]} ==========")
+                        print(f"{'='*60}")
+                        debug_log_new("INPUT joint_q", state_in.joint_q)
+                        debug_log_new("INPUT joint_qd", state_in.joint_qd)
+                        debug_log_new("MID joint_q (half-step)", state_mid.joint_q)
+                        debug_log_new("joint_act (control.joint_act)", control.joint_act)
+                        debug_log_new("joint_target_ke", model.joint_target_ke)
+                        debug_log_new("joint_target_kd", model.joint_target_kd)
+                        debug_log_new("joint_limit_ke", model.joint_limit_ke)
+                        debug_log_new("joint_limit_kd", model.joint_limit_kd)
+                        debug_log_new("joint_axis_mode", model.joint_axis_mode)
+                    # ================================================
+                    # === ACTION ROUTING DEBUG ===
+                    if DEBUG_STEP_COUNTER_NEW[0] < 3:
+                        q_np = state_mid.joint_q.numpy()
+                        act_np = control.joint_act.numpy()
+                        ke_np = model.joint_target_ke.numpy()
+                        # Your actuated joints: axis_start=0,1,2... for the 12 actuated DOFs
+                        # joint_q: first 7 are free joint (pos+quat), actuated start at index 7
+                        for i in range(3):  # First 3 actuated joints
+                            coord_idx = 7 + i   # joint_q index
+                            axis_idx = i        # joint_act/ke index
+                            print(f"[NEW] Joint {i}: q[{coord_idx}]={q_np[coord_idx]:.4f}, act[{axis_idx}]={act_np[axis_idx]:.4f}, ke[{axis_idx}]={ke_np[axis_idx]:.1f}, error={act_np[axis_idx]-q_np[coord_idx]:.4f}")
+
+                    # eval_tau (tau will be h)
                     state_mid.body_ft_s.zero_()
                     wp.launch(
                         eval_rigid_tau,
@@ -3343,7 +3625,7 @@ class MoreauIntegrator(Integrator):
                             model.joint_axis_start,
                             model.joint_axis_dim,
                             model.joint_axis_mode,
-                            state_mid.joint_q,
+                            state_mid.joint_q, # CHANGED from  state_in.body_q
                             state_in.joint_qd,
                             control.joint_act,
                             model.joint_target_ke,
@@ -3364,16 +3646,45 @@ class MoreauIntegrator(Integrator):
                         device=model.device,
                     )
 
-                    # Clear Moreau-specific buffers before evaluating Jc, G, c.
+                    # if requires_grad: #DEBUG
+                    #     #wp.synchronize_device()  # Ensure kernel completed
+                    #     tau_np = state_mid.joint_tau.numpy()
+                    #     print(f"\n=== AFTER eval_rigid_tau ===")
+                    #     print(f"  joint_tau norm: {numpy.linalg.norm(tau_np):.6e}")
+                    #     print(f"  joint_tau min/max: {tau_np.min():.6e} / {tau_np.max():.6e}")
+                    #     print(f"  joint_tau requires_grad: {state_mid.joint_tau.requires_grad}")
+                    #     print(f"  joint_tau has grad storage: {state_mid.joint_tau.grad is not None}")
+
+                    # ============== DEBUG CHECKPOINT 2 ==============
+                    if DEBUG_STEP_COUNTER_NEW[0] < 20:
+                        wp.synchronize_device()
+                        debug_log_new("joint_tau (PRE-CONTACT)", state_mid.joint_tau)
+                        debug_log_new("body_f_s (bias forces)", state_mid.body_f_s)
+                    # ================================================
+
+                    #clear Vars before evaluating Jc etc.
                     self.clear_moreau_vars(state_mid)
 
-                    # Evaluate Jc, G, and c.
+                    # eval Jc, G, and c
                     self.eval_contact_quantities(model, state_in, state_mid, dt)
 
-                    # Prox iteration to resolve contact percussions.
+                    
+                    # temporary variable Setting:
+                    # mu = 0.8
+                    # prox_iter = 20
+
+
+                    # prox iteration
                     self.eval_contact_forces(model, state_mid, dt, mu, prox_iter, mode)
 
-                    # Recompute tau now that contact forces have been applied to body_f_s.
+                    # ============== DEBUG CHECKPOINT 3 ==============
+                    if DEBUG_STEP_COUNTER_NEW[0] < 20:
+                        wp.synchronize_device()
+                        debug_log_new("percussion (contact impulses)", state_mid.percussion)
+                        debug_log_new("body_f_s (after contact)", state_mid.body_f_s)
+                    # ================================================
+
+                    # recompute tau with contact forces
                     state_mid.body_ft_s.zero_()
                     state_mid.joint_tau.zero_()
                     wp.launch(
@@ -3389,7 +3700,7 @@ class MoreauIntegrator(Integrator):
                             model.joint_axis_start,
                             model.joint_axis_dim,
                             model.joint_axis_mode,
-                            state_mid.joint_q,
+                            state_mid.joint_q, # CHANGED from  state_in.body_q
                             state_in.joint_qd,
                             control.joint_act,
                             model.joint_target_ke,
@@ -3410,7 +3721,41 @@ class MoreauIntegrator(Integrator):
                         device=model.device,
                     )
 
+                    # ============== DEBUG CHECKPOINT 4 ==============
+                    if DEBUG_STEP_COUNTER_NEW[0] < 20:
+                        wp.synchronize_device()
+                        debug_log_new("joint_tau (POST-CONTACT)", state_mid.joint_tau)
+                    # ================================================
+                    # # ============== DEBUG: Full H and L matrices ==============
+                    # if DEBUG_STEP_COUNTER_NEW[0] < 2:
+                    #     wp.synchronize_device()
+                    #     H_np = self.H.numpy()
+                    #     L_np = self.L.numpy()
+                    #     # For a quadruped with 18 DOFs, H is 18x18 = 324 elements per articulation
+                    #     # Print first articulation's H matrix (first 324 elements reshaped to 18x18)
+                    #     H_block = H_np[:324].reshape(18, 18)
+                    #     L_block = L_np[:324].reshape(18, 18)
+                    #     print(f"[NEW] H matrix (first 6x6 block):")
+                    #     print(H_block[:6, :6])
+                    #     print(f"[NEW] L matrix (first 6x6 block):")
+                    #     print(L_block[:6, :6])
+                    #     print(f"[NEW] H matrix (rows 6-12, cols 0-6) - coupling terms:")
+                    #     print(H_block[6:12, :6])
+                    #     print(f"[NEW] L matrix (rows 6-12, cols 0-6) - coupling terms:")
+                    #     print(L_block[6:12, :6])
+                    # # ==========================================================
+                    
                     ############################ Moreau Contact Resolution  END  ############################
+
+                    # print("joint_tau:")
+                    # print(state_mid.joint_tau.numpy())
+                    # print("body_q:")
+                    # print(state_in.body_q.numpy())
+                    # print("body_qd:")
+                    # print(state_in.body_qd.numpy())
+
+                    # if self._step % self.update_mass_matrix_every == 0: OLD mass matrix eval call
+                    #     self.eval_mass_matrix(model ,state_mid)
 
                     # solve for qdd
                     state_mid.joint_qdd.zero_()
@@ -3432,6 +3777,25 @@ class MoreauIntegrator(Integrator):
                         device=model.device,
                     )
 
+                    # ============== DEBUG CHECKPOINT 5 ==============
+                    if DEBUG_STEP_COUNTER_NEW[0] < 20:
+                        wp.synchronize_device()
+                        debug_log_new("joint_qdd (accelerations)", state_mid.joint_qdd)
+                    # ================================================
+
+                    # if requires_grad: #DEBUG
+                    #     #wp.synchronize_device()
+                    #     qdd_np = state_mid.joint_qdd.numpy()
+                    #     print(f"\n=== AFTER solve for qdd ===")
+                    #     print(f"  joint_qdd norm: {numpy.linalg.norm(qdd_np):.6e}")
+                    #     print(f"  joint_qdd min/max: {qdd_np.min():.6e} / {qdd_np.max():.6e}")
+                    #     print(f"  joint_qdd requires_grad: {state_mid.joint_qdd.requires_grad}")
+
+                    # print("joint_qdd:")
+                    # print(state_mid.joint_qdd.numpy())
+                    # print("\n\n")
+
+            # -------------------------------------
             # integrate bodies
 
             if model.joint_count:
@@ -3474,15 +3838,162 @@ class MoreauIntegrator(Integrator):
 
             self.integrate_particles(model, state_in, state_out, dt)
 
-            # Reset the contact Jacobian between steps so variable contact counts
-            # don't leak stale rows into the next step's assembly.
+            # Temporary additional MOREAU Clearing
             self.Jc.zero_()
+
+            # print(f"------------------------------ Iteration {self._step} Complete ------------------------------")
 
             self._step += 1
 
-            return state_out
+            # ============== DEBUG CHECKPOINT 6 ==============
+            if DEBUG_STEP_COUNTER_NEW[0] < 20:
+                wp.synchronize_device()
+                debug_log_new("OUTPUT joint_q", state_out.joint_q)
+                debug_log_new("OUTPUT joint_qd", state_out.joint_qd)
+                print(f"[NEW] ========== END STEP {DEBUG_STEP_COUNTER_NEW[0]} ==========\n")
+                DEBUG_STEP_COUNTER_NEW[0] += 1
+            # ================================================
 
+            # ============== DEBUG: Step-by-step state comparison ==============
+            # DEBUG_STEP_COUNTER_NEW[0] += 1
+            if DEBUG_STEP_COUNTER_NEW[0] <= 5:
+
+                # In your debug logging at end of simulate:
+                import numpy as np
+
+                # Get spatial velocity
+                v_s = state_mid.body_v_s.numpy()[0]  # Base body
+                w = v_s[0:3]  # Angular
+                v = v_s[3:6]  # Linear at origin
+
+                # Get body position  
+                X = state_out.body_q.numpy()[0]
+                r = X[0:3]  # Translation part
+
+                # Compute inertial velocity
+                v_inertial = v + np.cross(w, r)
+
+                print(f"Raw spatial v: {v}")
+                print(f"Inertial v: {v_inertial}")
+                print(f"CLEMENS body_qd: [should match v_inertial]")
+                wp.synchronize_device()
+                import numpy as np
+                
+                step = DEBUG_STEP_COUNTER_NEW[0]
+                
+                # Input state
+                q_in = state_in.joint_q.numpy()
+                qd_in = state_in.joint_qd.numpy()
+                
+                # Output state
+                q_out = state_out.joint_q.numpy()
+                qd_out = state_out.joint_qd.numpy()
+                
+                # Key intermediate quantities
+                tau = state_mid.joint_tau.numpy()
+                qdd = state_mid.joint_qdd.numpy()
+                
+                # Contact info
+                perc = state_mid.percussion.numpy()
+                perc_norm = np.linalg.norm(perc)
+                
+                print(f"\n[NEW] ===== STEP {step} SUMMARY =====")
+                print(f"[NEW] q_in[:6]:  {q_in[:6]}")
+                print(f"[NEW] qd_in[:6]: {qd_in[:6]}")
+                print(f"[NEW] tau[:6]:   {tau[:6]}")
+                print(f"[NEW] qdd[:6]:   {qdd[:6]}")
+                print(f"[NEW] q_out[:6]: {q_out[:6]}")
+                print(f"[NEW] qd_out[:6]:{qd_out[:6]}")
+                print(f"[NEW] percussion norm: {perc_norm:.6f}")
+                print(f"[NEW] percussion[0]: {perc[0]}")
+                
+                # Energy check (kinetic energy should be roughly conserved without contacts/gravity)
+                # KE = 0.5 * qd^T * H * qd (approximation: just qd norm)
+                ke_in = 0.5 * np.sum(qd_in**2)
+                ke_out = 0.5 * np.sum(qd_out**2)
+                print(f"[NEW] KE (approx): in={ke_in:.6f}, out={ke_out:.6f}, delta={ke_out-ke_in:.6f}")
+            # ===========================================================
+            
+            # ================== VELOCITY DEBUG - ADD TO BOTH INTEGRATORS ==================
+            if DEBUG_STEP_COUNTER_NEW[0] < 2:
+                wp.synchronize_device()
+                import numpy as np
+                
+                print(f"\n{'='*70}")
+                print(f"[VELOCITY DEBUG] Comprehensive Velocity Analysis")
+                print(f"{'='*70}")
+                
+                # 1. Joint-space velocities (these SHOULD match between integrators)
+                jqd = state_out.joint_qd.numpy()
+                print(f"\n[1] JOINT_QD (state_out.joint_qd):")
+                print(f"    Base angular (qd[0:3]): {jqd[0:3]}")
+                print(f"    Base linear  (qd[3:6]): {jqd[3:6]}")
+                
+                # 2. Body spatial velocity (intermediate computation)
+                # NOTE: This array name might differ! Check what exists.
+                if hasattr(state_out, 'body_v_s'):
+                    bvs_out = state_out.body_v_s.numpy()
+                    print(f"\n[2] BODY_V_S (state_out.body_v_s) - Body 0:")
+                    print(f"    Angular (top):  {bvs_out[0, 0:3]}")
+                    print(f"    Linear (bottom): {bvs_out[0, 3:6]}")
+                else:
+                    print(f"\n[2] state_out.body_v_s: NOT FOUND")
+                
+                if hasattr(state_mid, 'body_v_s'):
+                    bvs_mid = state_mid.body_v_s.numpy()
+                    print(f"\n[3] BODY_V_S (state_mid.body_v_s) - Body 0:")
+                    print(f"    Angular (top):  {bvs_mid[0, 0:3]}")
+                    print(f"    Linear (bottom): {bvs_mid[0, 3:6]}")
+                else:
+                    print(f"\n[3] state_mid.body_v_s: NOT FOUND")
+                
+                # 3. Body Cartesian velocity (what policy sees)
+                bqd = state_out.body_qd.numpy()
+                print(f"\n[4] BODY_QD (state_out.body_qd) - Body 0:")
+                print(f"    Angular (0:3): {bqd[0, 0:3]}")
+                print(f"    Linear (3:6):  {bqd[0, 3:6]}")
+                
+                # 4. Body position (for cross product computation)
+                bq = state_out.body_q.numpy()
+                print(f"\n[5] BODY_Q (state_out.body_q) - Body 0:")
+                print(f"    Position: {bq[0, 0:3]}")
+                print(f"    Rotation: {bq[0, 3:7]}")
+                
+                # 5. Manual cross-product check
+                if hasattr(state_mid, 'body_v_s'):
+                    w = bvs_mid[0, 0:3]
+                    v = bvs_mid[0, 3:6]
+                    r = bq[0, 0:3]
+                    v_inertial_computed = v + np.cross(w, r)
+                    print(f"\n[6] MANUAL COMPUTATION (using state_mid.body_v_s):")
+                    print(f"    w (angular): {w}")
+                    print(f"    v (linear):  {v}")
+                    print(f"    r (position): {r}")
+                    print(f"    w × r:        {np.cross(w, r)}")
+                    print(f"    v + w×r:      {v_inertial_computed}")
+                    print(f"    body_qd[3:6]: {bqd[0, 3:6]}")
+                    print(f"    MATCH: {np.allclose(v_inertial_computed, bqd[0, 3:6], atol=1e-4)}")
+                
+                # 6. Check if body_X_sc exists (CLEMENS uses this)
+                if hasattr(state_out, 'body_X_sc'):
+                    bxsc = state_out.body_X_sc.numpy()
+                    print(f"\n[7] BODY_X_SC (state_out.body_X_sc) - Body 0:")
+                    print(f"    Value: {bxsc[0]}")
+                else:
+                    print(f"\n[7] state_out.body_X_sc: NOT FOUND")
+                
+                if hasattr(state_mid, 'body_X_sc'):
+                    bxsc_mid = state_mid.body_X_sc.numpy()
+                    print(f"\n[8] BODY_X_SC (state_mid.body_X_sc) - Body 0:")
+                    print(f"    Value: {bxsc_mid[0]}")
+                
+                print(f"\n{'='*70}\n")
+            # ================== END VELOCITY DEBUG ==================
+            return state_out
+    
+    # NEW implementation
     def eval_mass_matrix(self, model, state_mid):
+        # moved featherstone mass matrix computation here for cleaner calling
 
         # build J
         wp.launch(
@@ -3499,6 +4010,31 @@ class MoreauIntegrator(Integrator):
             device=model.device,
         )
 
+        # Add this after eval_rigid_jacobian in BOTH integrators:
+        # if DEBUG_STEP_COUNTER_NEW[0] < 1:
+        #     wp.synchronize_device()
+        #     import numpy as np
+            
+        #     num_bodies = 13
+        #     num_dofs = 18
+            
+        #     # Get J as a matrix
+        #     J_flat = self.J.numpy() if hasattr(self, 'J') else model.J.numpy()  # adapt for each
+        #     J_np = J_flat[:num_bodies*6*num_dofs].reshape(num_bodies*6, num_dofs)
+            
+        #     print(f"\n[NEW] ===== FULL J MATRIX =====")
+        #     print(f"[NEW] J shape: {J_np.shape}")
+            
+        #     # Print each row's non-zero pattern
+        #     for i in range(num_bodies):
+        #         for r in range(6):
+        #             row_idx = i*6 + r
+        #             row = J_np[row_idx]
+        #             non_zero = np.where(np.abs(row) > 1e-10)[0]
+        #             non_zero_vals = row[non_zero]
+        #             if len(non_zero) > 0:
+        #                 print(f"[NEW] J[{row_idx}] (body {i}, component {r}): DOFs {non_zero.tolist()} = {non_zero_vals}")
+
         # build M
         wp.launch(
             eval_rigid_mass,
@@ -3506,19 +4042,66 @@ class MoreauIntegrator(Integrator):
             inputs=[
                 model.articulation_start,
                 self.articulation_M_start,
-                model.joint_child,
+                model.joint_child,  # ADD THIS
                 state_mid.body_I_s,
             ],
             outputs=[self.M],
             device=model.device,
         )
 
+        # # ============== DEBUG: J-M consistency check ==============
+        # if DEBUG_STEP_COUNTER_NEW[0] < 1:
+        #     wp.synchronize_device()
+        #     import numpy as np
+            
+        #     # Get dimensions
+        #     num_bodies = 13
+        #     num_dofs = 18
+            
+        #     J_np = self.J.numpy()[:num_bodies*6*num_dofs].reshape(num_bodies*6, num_dofs)
+        #     M_np = self.M.numpy()[:num_bodies*6*num_bodies*6].reshape(num_bodies*6, num_bodies*6)
+        #     body_I_s_np = state_mid.body_I_s.numpy()
+            
+        #     print(f"\n[NEW] ===== J-M CONSISTENCY CHECK =====")
+            
+        #     # For each joint, show which body row it fills in J AND what body's inertia is in M
+        #     print(f"[NEW] Joint-to-Body mapping vs M assignment:")
+        #     joint_child = model.joint_child.numpy() if hasattr(model, 'joint_child') else None
+            
+        #     for i in range(num_bodies):
+        #         # Find which DOF columns are non-zero in J row i*6
+        #         j_row = J_np[i*6, :]
+        #         non_zero_dofs = np.where(np.abs(j_row) > 1e-10)[0]
+                
+        #         child_body = joint_child[i] if joint_child is not None else "N/A"
+        #         mass_in_M = M_np[i*6+3, i*6+3]
+        #         mass_of_child = body_I_s_np[child_body][3, 3] if joint_child is not None else "N/A"
+        #         mass_at_index_i = body_I_s_np[i][3, 3]
+                
+        #         mismatch = "❌ MISMATCH!" if (joint_child is not None and abs(mass_in_M - mass_of_child) > 0.001) else "✓"
+                
+        #         print(f"  Row {i}: joint_child={child_body}, "
+        #             f"M has mass={mass_in_M:.4f}, "
+        #             f"body_I_s[{child_body}] mass={mass_of_child:.4f}, "
+        #             f"body_I_s[{i}] mass={mass_at_index_i:.4f} {mismatch}")
+            
+        #     print(f"\n[NEW] J matrix (rows 0-17, cols 0-5):")
+        #     print(J_np[:18, :6])
+            
+        #     print(f"\n[NEW] Expected: J row i should have inertia of joint_child[i]")
+        #     print(f"[NEW] Actual: M row i has inertia of body i (not joint_child[i]!)")
+        # # ===========================================================
+
         if self.use_tile_gemm:
+            # reshape arrays
             M_tiled = self.M.reshape((-1, 6 * self.joint_count, 6 * self.joint_count))
             J_tiled = self.J.reshape((-1, 6 * self.joint_count, self.dof_count))
             R_tiled = model.joint_armature.reshape((-1, self.dof_count))
             H_tiled = self.H.reshape((-1, self.dof_count, self.dof_count))
             L_tiled = self.L.reshape((-1, self.dof_count, self.dof_count))
+            # assert H_tiled.shape == (model.articulation_count, 18, 18)
+            # assert L_tiled.shape == (model.articulation_count, 18, 18)
+            # assert R_tiled.shape == (model.articulation_count, 18)
 
             if self.fuse_cholesky:
                 wp.launch_tiled(
@@ -3552,6 +4135,17 @@ class MoreauIntegrator(Integrator):
                     outputs=[self.L],
                     device=model.device,
                 )
+
+            # import numpy as np
+            # J = J_tiled.numpy()
+            # M = M_tiled.numpy()
+            # R = R_tiled.numpy()
+            # for i in range(model.articulation_count):
+            #     r = R[i,:,0]
+            #     H = J[i].T @ M[i] @ J[i]
+            #     L = np.linalg.cholesky(H + np.diag(r))
+            #     np.testing.assert_allclose(H, H_tiled.numpy()[i], rtol=1e-2, atol=1e-2)
+            #     np.testing.assert_allclose(L, L_tiled.numpy()[i], rtol=1e-1, atol=1e-1)
 
         else:
             # form P = M*J
@@ -3611,19 +4205,66 @@ class MoreauIntegrator(Integrator):
                 device=model.device,
             )
 
+
+
+        # print("joint_act:")
+        # print(control.joint_act.numpy())
+        # print("joint_tau:")
+        # print(state_mid.joint_tau.numpy())
+        # print("H:")
+        # print(self.H.numpy())
+        # print("L:")
+        # print(self.L.numpy())
+
+    
+
+
+
     def eval_contact_quantities(self, model, state_in, state_mid, dt):
-        # Reset per-step counters used by the scheduler.
+        # construct J_c
+        # kernel 16
+
+        # Add this debug in construct_contact_jacobian or nearby
+        # if DEBUG_STEP_COUNTER_NEW[0] <= 5:
+        #     wp.synchronize_device()
+            
+        #     contact_count = model.rigid_contact_count.numpy()[0]
+        #     print(f"\n[NEW] ===== CONTACT DEBUG STEP {DEBUG_STEP_COUNTER_NEW[0]} =====")
+        #     print(f"[NEW] rigid_contact_count: {contact_count}")
+        #     print(f"[NEW] col_height: {self.col_height}")
+            
+        #     if contact_count > 0:
+        #         bodies0 = self.rigid_contact_body0.numpy()[:min(4, contact_count)]
+        #         bodies1 = self.rigid_contact_body1.numpy()[:min(4, contact_count)]
+        #         points0 = model.rigid_contact_point0.numpy()[:min(4, contact_count)]
+        #         normals = model.rigid_contact_normal.numpy()[:min(4, contact_count)]
+                
+        #         print(f"[NEW] First contacts:")
+        #         for i in range(min(4, contact_count)):
+        #             print(f"  Contact {i}: body0={bodies0[i]}, body1={bodies1[i]}")
+        #             print(f"    point0={points0[i]}, normal={normals[i]}")
+                
+        #         # Also print body positions for reference
+        #         body_q = state_mid.body_q.numpy()  # or state_mid.body_X_sc for CLEMENS
+        #         print(f"[NEW] Body positions (first 4):")
+        #         for i in range(min(4, len(body_q))):
+        #             print(f"  Body {i}: pos={body_q[i][:3]}")
+        
+        # Reset counters
         state_mid.articulation_contact_counters.zero_()
         state_mid.body_contact_counters.zero_()
-
-        # Schedule active contacts per articulation (no gradient recorded).
+        # Run Scheduler (NO GRADIENT)
+        
+        # 2. Run Scheduler (NO GRADIENT)
+        # Note: Launching per-Articulation now!
         wp.launch(
             kernel=schedule_contacts,
-            dim=model.articulation_count,
+            dim=model.articulation_count, # <--- CHANGED from rigid_contact_max
             inputs=[
                 model.rigid_contact_count,
                 self.rigid_contact_body0,
                 self.rigid_contact_body1,
+                # New Geometry Inputs required for distance calc
                 model.rigid_contact_point0,
                 model.rigid_contact_point1,
                 model.rigid_contact_normal,
@@ -3634,14 +4275,16 @@ class MoreauIntegrator(Integrator):
                 model.shape_geo.thickness,
                 len(model.body_q),
                 model.shape_count,
-                model.rigid_contact_point0.shape[0],
+                model.rigid_contact_point0.shape[0], # max_contacts
             ],
-            outputs=[state_mid.contact_schedule],
+            outputs=[
+                state_mid.contact_schedule,
+            ],
             device=model.device,
-            record_tape=False,
+            record_tape=False 
         )
 
-        # Construct the contact Jacobian Jc (differentiable).
+        # 3. Construct Jc (WITH GRADIENT)
         wp.launch(
             kernel=construct_contact_jacobian,
             dim=model.articulation_count,
@@ -3668,11 +4311,62 @@ class MoreauIntegrator(Integrator):
                 model.rigid_contact_shape1,
                 model.shape_geo.thickness,
                 self.col_height,
+                # NEW INPUT
                 state_mid.contact_schedule,
             ],
-            outputs=[self.Jc, self.c_body_vec, state_mid.point_vec, state_mid.contact_normals, state_mid.ground_point_vec],
+            outputs=[self.Jc, self.c_body_vec, state_mid.point_vec, state_mid.contact_normals, state_mid.groundoffset],
             device=model.device,
         )
+
+        # After construct_contact_jacobian:
+        if DEBUG_STEP_COUNTER_NEW[0] <= 2:
+            wp.synchronize_device()
+            import numpy as np
+            
+            Jc_np = self.Jc.numpy() if hasattr(self, 'Jc') else model.Jc.numpy()
+            c_body_np = self.c_body_vec.numpy() if hasattr(self, 'c_body_vec') else model.c_body_vec.numpy()
+            
+            print(f"\n[NEW] ===== Jc DEBUG =====")
+            print(f"[NEW] c_body_vec[0:8]: {c_body_np[0:8]}")  # Which bodies have contacts
+            print(f"[NEW] Jc first 18 values: {Jc_np[:18]}")  # First row of Jc for articulation 0
+            print(f"[NEW] Jc norm: {np.linalg.norm(Jc_np):.6f}")
+            print(f"[NEW] Jc nonzero count: {np.sum(np.abs(Jc_np) > 1e-10)}")
+
+
+        """
+        OLD without seperate scheduling
+        wp.launch(
+            kernel=construct_contact_jacobian,
+            dim=model.articulation_count,
+            inputs=[
+                self.J,
+                model.articulation_start, # ADDED  for local body indexing
+                self.articulation_J_start,
+                self.articulation_Jc_start,
+                state_mid.body_q, # CHANGED from state_mid.body_X_sc # POTENTIAL ISSUE, MIGHT NEED TO CONNVERT body_q to body_X_sc
+                # model.rigid_contact_max, # no longer needed with NEW kernel
+                model.articulation_count,
+                self.dof_count, # changed from int(model.joint_dof_count / model.articulation_count)
+                len(model.body_q), # body_count: int, # ADDED: Safety check
+                model.shape_count, # shape_count: int, # ADDED: Safety check
+                model.rigid_contact_point0.shape[0], # max_contacts: int, # ADDED: Safety check
+                self.body_articulation,  # NEW body-to-articulation mapping
+                self.body_to_joint, # NEW body-to-joint mapping
+                model.rigid_contact_count, # NEW Total contact count from collision system
+                self.rigid_contact_body0,
+                model.rigid_contact_point0,
+                self.rigid_contact_body1, # ADDED to check both sides of each contact pair 
+                model.rigid_contact_point1, # ADDED to check both sides of each contact pair
+                model.rigid_contact_normal,
+                model.rigid_contact_shape0,
+                model.rigid_contact_shape1, # ADDED to check both sides of each contact pair
+                model.shape_geo.thickness, #changed from model.shape_geo,
+                self.col_height,
+            ],
+            outputs=[self.Jc, self.c_body_vec, state_mid.point_vec,state_mid.contact_normals],
+            device=model.device,
+        )
+        """
 
         # solve for X^T (X = H^-1*Jc^T)
         wp.launch(
@@ -3680,7 +4374,7 @@ class MoreauIntegrator(Integrator):
             dim=model.articulation_count,
             inputs=[
                 self.Jc,
-                self.dof_count,
+                self.dof_count, # changed from int(model.joint_dof_count / model.articulation_count)
                 self.articulation_Jc_start,
                 self.articulation_dof_start,
             ],
@@ -3706,9 +4400,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_1,
@@ -3721,9 +4416,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_2,
@@ -3736,9 +4432,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_3,
@@ -3751,9 +4448,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_4,
@@ -3766,9 +4464,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_5,
@@ -3781,9 +4480,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_6,
@@ -3796,9 +4496,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_7,
@@ -3811,9 +4512,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_8,
@@ -3826,9 +4528,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_9,
@@ -3841,9 +4544,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_10,
@@ -3856,9 +4560,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_11,
@@ -3871,9 +4576,10 @@ class MoreauIntegrator(Integrator):
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.Jc_12,
@@ -3887,8 +4593,8 @@ class MoreauIntegrator(Integrator):
             kernel=create_matrix,
             dim=model.articulation_count,
             inputs=[
-                self.dof_count,
-                self.articulation_Jc_start,
+                self.dof_count, # changed from int(model.joint_dof_count / model.articulation_count)
+                self.articulation_Jc_start, # CHANGED FROM  self.articulation_Jc_start
                 self.articulation_dof_start,
                 state_mid.Inv_M_times_Jc_t_1,
                 state_mid.Inv_M_times_Jc_t_2,
@@ -3907,24 +4613,26 @@ class MoreauIntegrator(Integrator):
         )
 
         # compute G = Jc*(H^-1*Jc^T)
+        # kernel 14
         matmul_batched(
             model.articulation_count,
             self.articulation_Jc_rows,  # m
             self.articulation_Jc_rows,  # n
             self.articulation_Jc_cols,  # intermediate dim
             0,
-            1,
+            1,# CHANGED from 1,
             self.articulation_Jc_start,
             self.articulation_Jc_start,
             self.articulation_G_start,
             self.Jc,
-            state_mid.Inv_M_times_Jc_t,
+            state_mid.Inv_M_times_Jc_t, # CHANGED from state_mid.Inv_M_times_Jc_t
             self.G,
             device=model.device,
         )
 
 
         # convert G to matrix
+        # kernel 13
         wp.launch(
             kernel=convert_G_to_matrix,
             dim=model.articulation_count,
@@ -3933,23 +4641,35 @@ class MoreauIntegrator(Integrator):
             device=model.device,
         )
 
+        # # After G_mat is computed:
+        # if DEBUG_STEP_COUNTER_NEW[0] <= 2:
+        #     G_mat_np = self.G_mat.numpy()
+        #     print(f"\n[NEW] ===== G_mat DEBUG =====")
+        #     print(f"[NEW] G_mat[0,0,0] (3x3): \n{G_mat_np[0,0,0]}")
+        #     print(f"[NEW] G_mat[0] diagonals: {[G_mat_np[0,i,i] for i in range(4)]}")
+        #     print(f"[NEW] G_mat norm: {np.linalg.norm(G_mat_np):.6f}")
+
         # solve for x (x = H^-1*h(tau))
+        # kernel 12
         wp.launch(
             kernel=eval_dense_solve_batched,
             dim=model.articulation_count,
             inputs=[
+                # self.articulation_dof_start, # changed order
                 self.articulation_H_start,
                 self.articulation_H_rows,
-                self.articulation_dof_start,
+                self.articulation_dof_start, # changed order
                 self.H,
                 self.L,
                 state_mid.joint_tau,
+                # state_mid.tmp_inv_m_times_h, # CHANGED to output
             ],
             outputs=[state_mid.inv_m_times_h, state_mid.tmp_inv_m_times_h],
             device=model.device,
         )
 
         # compute Jc*(H^-1*h(tau))
+        # kernel 11
         matmul_batched(
             model.articulation_count,
             self.articulation_Jc_rows,  # m
@@ -3967,6 +4687,7 @@ class MoreauIntegrator(Integrator):
         )
 
         # compute Jc*qd
+        # kernel 10
         matmul_batched(
             model.articulation_count,
             self.articulation_Jc_rows,  # m
@@ -3985,6 +4706,7 @@ class MoreauIntegrator(Integrator):
 
 
         # compute Jc*qd + Jc*(H^-1*h(tau)) * dt
+        # kernel 9
         wp.launch(
             kernel=eval_dense_add_batched,
             dim=model.articulation_count,
@@ -4002,6 +4724,7 @@ class MoreauIntegrator(Integrator):
         
 
         # convert c to matrix/vector arrays
+        # kernel 8
         wp.launch(
             kernel=convert_c_to_vector,
             dim=model.articulation_count,
@@ -4012,7 +4735,10 @@ class MoreauIntegrator(Integrator):
         
 
     def eval_contact_forces(self, model, state_mid, dt, mu, prox_iter, mode):
+
+
         # prox iteration
+        # kernel 7
         if mode == "hard":
             wp.launch(
                 kernel=prox_iteration_unrolled,
@@ -4025,14 +4751,14 @@ class MoreauIntegrator(Integrator):
             wp.launch(
                 kernel=prox_iteration_unrolled_soft,
                 dim=model.articulation_count,
-                inputs=[state_mid.point_vec, state_mid.ground_point_vec, self.G_mat, state_mid.c_vec, state_mid.contact_normals, mu, prox_iter, self.sigmoid_scale],
+                inputs=[state_mid.point_vec, state_mid.groundoffset, self.G_mat, state_mid.c_vec, state_mid.contact_normals, mu, prox_iter, self.sigmoid_scale],
                 outputs=[state_mid.percussion],
                 device=model.device,
             )
         else:
             raise ValueError("Invalid mode")
 
-        # Accumulate resolved contact impulses into the body force spatial vector.
+        # kernel 6
         wp.launch(
             kernel=p_to_f_s,
             dim=model.articulation_count,
@@ -4041,19 +4767,21 @@ class MoreauIntegrator(Integrator):
                 state_mid.point_vec,
                 state_mid.percussion,
                 dt,
-                len(model.body_q),
+                len(model.body_q) # body_count: int, # ADDED: Safety check
              ],
             outputs=[state_mid.body_f_s],
             device=model.device,
         )
 
     def clear_moreau_vars(self, state_mid):
-        """Reset all per-step contact buffers before a new contact resolution."""
-        # Contact matrices must be zeroed to handle variable contact counts.
+        """Clear Moreau-specific variables before contact resolution"""
+        # Contact matrices (for safety with variable contact counts)
         self.Jc.zero_()
-        self.G.zero_()
+        self.G.zero_() 
         state_mid.contact_schedule.fill_(-1)
 
+
+        #new
         state_mid.Inv_M_times_Jc_t.zero_()
         state_mid.Inv_M_times_Jc_t_Transposed.zero_()
         self.G_mat.zero_()
